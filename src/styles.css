@@ -181,6 +181,8 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .rating-grid button span { color:var(--lime); font-size:1.4rem; }
 .text-button { border:0; background:transparent; color:#b9cabe; margin-top:18px; padding:12px; }
 .empty { margin:15px 0 0; }
+.render-recovery { width:min(calc(100% - 32px),560px);margin:8vh auto;padding:28px;border:1px solid var(--line);border-radius:24px;background:var(--paper);box-shadow:var(--shadow);display:grid;gap:14px; }
+.render-recovery .brand-mark { margin-bottom:12px; }.render-recovery .eyebrow { margin:0; }.render-recovery h1,.render-recovery p { margin-bottom:0; }.render-recovery .text-button { color:#9d3c2f; }
 .readiness { text-transform:uppercase; font-weight:800; }
 .readiness.ready { color:#347448; }.readiness.caution { color:#ad7000; }.readiness.recover { color:#a53d31; }
 .readiness-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:18px; }

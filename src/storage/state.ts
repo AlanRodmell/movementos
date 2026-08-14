@@ -1,4 +1,4 @@
-import type { ActiveSession, AppState, Category, Equipment, Exercise, Goal, Level, MuscleArea, WorkoutExercise, WorkoutPlan, WorkoutSession } from '../domain/types'
+import type { ActiveSession, AppState, Category, Equipment, Exercise, ExerciseStat, Goal, Level, MuscleArea, WorkoutExercise, WorkoutPlan, WorkoutSession } from '../domain/types'
 
 export const STORAGE_KEY = 'movementos:state'
 // The external contract deliberately stays at v11 so legacy installs and backups remain compatible.
@@ -9,8 +9,11 @@ export const defaultState: AppState = {
   profile: {
     name: '', level: 2, goal: 'general', equipment: ['none', 'wall', 'chair'], soundEnabled: true,
     waitBetweenExercises: true, avoidList: [], favourites: [], advancedBridges: false,
+    height:'', weight:'', heightUnit:'cm', weightUnit:'kg', upper:2, lower:2, core:2, conditioning:2,
   },
   issues: [], history: [], savedPlans: [], customExercises: [], activeSession: null,
+  dailyCheckIn:{ date:null, tightAreas:[], primaryArea:null }, exerciseStats:{}, rotation:{}, legacyHistory:{},
+  recovery:{ upper:0, lower:0, core:0, conditioning:0 },
 }
 
 const goals: Goal[] = ['general','strength','muscle','endurance','mobility']
@@ -42,8 +45,35 @@ function migrateHistory(raw: Record<string, unknown>): WorkoutSession[] {
       rating: ['easy','good','hard','brutal','unrated'].includes(String(session.rating)) ? session.rating as WorkoutSession['rating'] : 'unrated',
       completedExerciseIds: safeIds(session.completedExerciseIds).length ? safeIds(session.completedExerciseIds) : exerciseRows.map(entry => entry.id),
       exercises: exerciseRows,
+      focus: Array.isArray(session.focus) ? session.focus.map(value => safeArea(value)).slice(0,20) : [],
+      areaLoadBefore: session.areaLoadBefore && typeof session.areaLoadBefore === 'object' ? session.areaLoadBefore as WorkoutSession['areaLoadBefore'] : {},
     }
   })
+}
+
+function numericMap(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value as Record<string,unknown>).filter(([key]) => /^[\w-]{1,100}$/.test(key)).map(([key,raw]) => [key, Number(raw) || 0]).slice(0,1000))
+}
+
+function migrateExerciseStats(value: unknown): Record<string, ExerciseStat> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value as Record<string,unknown>).filter(([id,item]) => /^[\w-]{1,100}$/.test(id) && item && typeof item === 'object').map(([id,item]) => {
+    const raw = item as Record<string,unknown>
+    const rating = ['easy','good','hard','brutal','unrated'].includes(String(raw.lastRating)) ? raw.lastRating as ExerciseStat['lastRating'] : null
+    const decision = ['progress','maintain','regress'].includes(String(raw.coachDecision)) ? raw.coachDecision as ExerciseStat['coachDecision'] : null
+    return [id, { attempts:Number(raw.attempts)||0, completed:Number(raw.completed)||0, easyGood:Number(raw.easyGood)||0, hard:Number(raw.hard)||0, brutal:Number(raw.brutal)||0, consecutiveSuccesses:Number(raw.consecutiveSuccesses)||0, lastRating:rating, lastCompletedAt:raw.lastCompletedAt ? safeText(raw.lastCompletedAt,'',40) : null, lastDurationSeconds:raw.lastDurationSeconds == null ? null : Number(raw.lastDurationSeconds)||0, progressionReady:Boolean(raw.progressionReady), coachDecision:decision } satisfies ExerciseStat]
+  }).slice(0,1000))
+}
+
+function rebuildExerciseStats(history:WorkoutSession[]):Record<string,ExerciseStat> {
+  const stats:Record<string,ExerciseStat>={}
+  history.slice().sort((a,b)=>Date.parse(a.date)-Date.parse(b.date)).forEach(session=>[...new Set(session.completedExerciseIds)].forEach(id=>{
+    const previous=stats[id]??{ attempts:0,completed:0,easyGood:0,hard:0,brutal:0,consecutiveSuccesses:0,lastRating:null,lastCompletedAt:null,lastDurationSeconds:null,progressionReady:false,coachDecision:null }
+    const positive=session.rating==='easy'||session.rating==='good';const consecutiveSuccesses=positive?previous.consecutiveSuccesses+1:0
+    stats[id]={ attempts:previous.attempts+1,completed:previous.completed+1,easyGood:previous.easyGood+(positive?1:0),hard:previous.hard+(session.rating==='hard'?1:0),brutal:previous.brutal+(session.rating==='brutal'?1:0),consecutiveSuccesses,lastRating:session.rating,lastCompletedAt:session.date,lastDurationSeconds:session.exercises.find(item=>item.id===id)?.durationSeconds??null,progressionReady:consecutiveSuccesses>=3,coachDecision:session.rating==='brutal'?'regress':consecutiveSuccesses>=3?'progress':'maintain' }
+  }))
+  return stats
 }
 
 function legacyCategory(id: string, item: Record<string, unknown>): Category {
@@ -90,6 +120,7 @@ function planFromUnknown(value: unknown, fallbackId = 'plan_import'): WorkoutPla
     goal: goals.includes(raw.goal as Goal) ? raw.goal as Goal : 'general', durationMinutes: Math.max(1, Number(raw.durationMinutes) || Math.round(exercises.reduce((sum,item) => sum + item.durationSeconds, 0) / 60)),
     createdAt: Number.isFinite(Date.parse(String(raw.createdAt))) ? new Date(String(raw.createdAt)).toISOString() : new Date(0).toISOString(), exercises,
     insights: Array.isArray(raw.insights) ? raw.insights.map(value => safeText(value, '', 200)).filter(Boolean).slice(0, 10) : ['Restored from your saved workout library.'],
+    focusAreas: Array.isArray(raw.focusAreas) ? raw.focusAreas.map(value => safeArea(value)).slice(0, 20) : [],
   }
 }
 
@@ -108,6 +139,9 @@ export function normaliseState(value: unknown): AppState {
   const profile = raw.profile && typeof raw.profile === 'object' ? raw.profile as Record<string, unknown> : {}
   const inferredLevel = Math.round(['upper','lower','core','conditioning'].reduce((sum, key) => sum + (Number(profile[key]) || 2), 0) / 4)
   const savedSource = Array.isArray(raw.savedPlans) ? raw.savedPlans : Array.isArray(raw.savedWorkouts) ? raw.savedWorkouts : []
+  const history=migrateHistory(raw)
+  const migratedStats=migrateExerciseStats(raw.exerciseStats)
+  const exerciseStats=Object.keys(migratedStats).length?migratedStats:rebuildExerciseStats(history)
   return {
     schemaVersion: SCHEMA_VERSION,
     profile: {
@@ -116,13 +150,18 @@ export function normaliseState(value: unknown): AppState {
       equipment: Array.isArray(profile.equipment) ? profile.equipment.filter(item => equipment.includes(item as Equipment)) as Equipment[] : ['none','wall','chair'],
       soundEnabled: profile.soundEnabled !== false, waitBetweenExercises: profile.waitBetweenExercises !== false,
       avoidList: safeIds(profile.avoidList), favourites: safeIds(profile.favourites ?? profile.alwaysInclude), advancedBridges: Boolean(profile.advancedBridges ?? (profile.unlocks as Record<string, unknown> | undefined)?.advancedBridges),
+      height:safeText(profile.height,'',12), weight:safeText(profile.weight,'',12), heightUnit:profile.heightUnit === 'in' ? 'in' : 'cm', weightUnit:profile.weightUnit === 'lbs' ? 'lbs' : 'kg',
+      upper:level(profile.upper ?? profile.level), lower:level(profile.lower ?? profile.level), core:level(profile.core ?? profile.level), conditioning:level(profile.conditioning ?? profile.level),
     },
     issues: Array.isArray(raw.issues) ? raw.issues.filter(item => item && typeof item === 'object').map((item, index) => {
       const issue = item as Record<string, unknown>
-      return { id: safeText(issue.id, `issue_${index}`, 100), area: safeArea(issue.area, 'lower_back'), severity: ['mild','moderate','flare'].includes(String(issue.severity)) ? issue.severity as 'mild'|'moderate'|'flare' : 'mild', status: issue.status === 'resolved' ? 'resolved' as const : 'active' as const, note: safeText(issue.note, '', 500), createdAt: safeText(issue.createdAt, new Date().toISOString(), 40) }
+      return { id: safeText(issue.id, `issue_${index}`, 100), area: safeArea(issue.area, 'lower_back'), severity: ['mild','moderate','flare'].includes(String(issue.severity)) ? issue.severity as 'mild'|'moderate'|'flare' : 'mild', status: issue.status === 'resolved' ? 'resolved' as const : 'active' as const, note: safeText(issue.note, '', 500), createdAt: safeText(issue.createdAt, new Date().toISOString(), 40), side:['left','right','bilateral'].includes(String(issue.side)) ? issue.side as 'left'|'right'|'bilateral' : 'bilateral', resolvedAt:issue.resolvedAt ? safeText(issue.resolvedAt,'',40) : null }
     }).slice(0, 250) : [],
-    history: migrateHistory(raw), savedPlans: savedSource.map((item,index) => planFromUnknown(item, `plan_import_${index}`)).filter((item): item is WorkoutPlan => Boolean(item)).slice(0,100),
+    history, savedPlans: savedSource.map((item,index) => planFromUnknown(item, `plan_import_${index}`)).filter((item): item is WorkoutPlan => Boolean(item)).slice(0,100),
     customExercises: migrateCustomExercises(raw), activeSession: migrateActiveSession(raw.activeSession),
+    dailyCheckIn: raw.dailyCheckIn && typeof raw.dailyCheckIn === 'object' ? (() => { const check = raw.dailyCheckIn as Record<string,unknown>; return { date:check.date ? safeText(check.date,'',40) : null, tightAreas:Array.isArray(check.tightAreas) ? check.tightAreas.map(value => safeArea(value)).slice(0,30) : [], primaryArea:check.primaryArea ? safeArea(check.primaryArea) : null } })() : { date:null,tightAreas:[],primaryArea:null },
+    exerciseStats, rotation:numericMap(raw.rotation), legacyHistory:numericMap(raw.history),
+    recovery:{ upper:Number((raw.recovery as Record<string,unknown> | undefined)?.upper)||0, lower:Number((raw.recovery as Record<string,unknown> | undefined)?.lower)||0, core:Number((raw.recovery as Record<string,unknown> | undefined)?.core)||0, conditioning:Number((raw.recovery as Record<string,unknown> | undefined)?.conditioning)||0 },
   }
 }
 
@@ -140,12 +179,12 @@ export function serializeLegacyState(state: AppState) {
     category: exercise.category, equipment: exercise.equipment, primaryMuscles: exercise.primaryMuscles, unilateral: exercise.unilateral, lowImpact: exercise.lowImpact, goals: exercise.goals, contraindications: exercise.contraindications,
   }]))
   return {
-    schemaVersion: SCHEMA_VERSION, dailyCheckIn: { date:null, tightAreas:[], primaryArea:null },
-    profile: { height:'', weight:'', heightUnit:'cm', weightUnit:'kg', trainingGoal:state.profile.goal, upper:Math.min(3,state.profile.level), lower:Math.min(3,state.profile.level), core:Math.min(3,state.profile.level), conditioning:Math.min(3,state.profile.level), unlocks:{ advancedBridges:state.profile.advancedBridges }, soundEnabled:state.profile.soundEnabled, waitBetweenExercises:state.profile.waitBetweenExercises, avoidList:state.profile.avoidList, alwaysInclude:state.profile.favourites, name:state.profile.name, level:state.profile.level, goal:state.profile.goal, equipment:state.profile.equipment, favourites:state.profile.favourites },
-    rotation:{}, history:{},
-    workoutHistory: state.history.map(session => ({ id:session.id, date:session.date, name:session.planName, durationSeconds:session.durationSeconds, plannedExercises:session.exercises.length, completedExercises:session.completedExerciseIds.length, rating:session.rating, focus:[], intention:session.intention === 'recover' ? 'recovery' : 'workout', goal:session.goal, completedExerciseIds:session.completedExerciseIds, exercises:session.exercises.map(exercise => ({ id:exercise.id, name:exercise.name, family:null, reps:exercise.prescription, detail:'', secs:exercise.durationSeconds })) , areaLoadBefore:{} })),
-    exerciseStats:{}, recovery:{ upper:0, lower:0, core:0, conditioning:0 },
-    savedWorkouts: state.savedPlans.map(plan => ({ id:plan.id, name:plan.name, groups:legacyGroups(plan), intention:plan.intention, goal:plan.goal, durationMinutes:plan.durationMinutes, createdAt:plan.createdAt, insights:plan.insights })),
+    schemaVersion: SCHEMA_VERSION, dailyCheckIn:state.dailyCheckIn,
+    profile: { height:state.profile.height, weight:state.profile.weight, heightUnit:state.profile.heightUnit, weightUnit:state.profile.weightUnit, trainingGoal:state.profile.goal, upper:state.profile.upper, lower:state.profile.lower, core:state.profile.core, conditioning:state.profile.conditioning, unlocks:{ advancedBridges:state.profile.advancedBridges }, soundEnabled:state.profile.soundEnabled, waitBetweenExercises:state.profile.waitBetweenExercises, avoidList:state.profile.avoidList, alwaysInclude:state.profile.favourites, name:state.profile.name, level:state.profile.level, goal:state.profile.goal, equipment:state.profile.equipment, favourites:state.profile.favourites },
+    rotation:state.rotation, history:state.legacyHistory,
+    workoutHistory: state.history.map(session => ({ id:session.id, date:session.date, name:session.planName, durationSeconds:session.durationSeconds, plannedExercises:session.exercises.length, completedExercises:session.completedExerciseIds.length, rating:session.rating, focus:session.focus, intention:session.intention === 'recover' ? 'recovery' : 'workout', goal:session.goal, completedExerciseIds:session.completedExerciseIds, exercises:session.exercises.map(exercise => ({ id:exercise.id, name:exercise.name, family:null, reps:exercise.prescription, detail:'', secs:exercise.durationSeconds })) , areaLoadBefore:session.areaLoadBefore })),
+    exerciseStats:state.exerciseStats, recovery:state.recovery,
+    savedWorkouts: state.savedPlans.map(plan => ({ id:plan.id, name:plan.name, groups:legacyGroups(plan), intention:plan.intention, goal:plan.goal, durationMinutes:plan.durationMinutes, createdAt:plan.createdAt, insights:plan.insights, focusAreas:plan.focusAreas })),
     customExercises, issues:state.issues, activeSession:state.activeSession,
   }
 }

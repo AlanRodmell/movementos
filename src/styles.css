@@ -94,6 +94,10 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .plan-meta { display:flex; flex-wrap:wrap; gap:8px; }
 .plan-meta span { padding:8px 12px; border-radius:999px; background:var(--sage); font-size:.75rem; font-weight:800; text-transform:capitalize; }
 .plan-section { display:grid; gap:10px; }
+.plan-exercise { display:grid; gap:7px; }
+.exercise-adjustments { display:flex; gap:6px; overflow-x:auto; padding:0 4px 5px; }
+.exercise-adjustments button { flex:0 0 auto; border:1px solid var(--line); background:var(--paper); color:var(--forest); border-radius:9px; padding:7px 10px; font-size:.68rem; font-weight:800; }
+.exercise-adjustments button.danger-text { color:#9d3c2f; }
 .plan-section .section-heading { padding:0 4px; }
 .plan-section .section-heading > span { width:28px; height:28px; display:grid; place-items:center; border-radius:50%; background:var(--ink); color:white; }
 .exercise-card { display:grid; grid-template-columns:auto 1fr auto; gap:14px; align-items:start; background:var(--paper); border:1px solid var(--line); border-radius:19px; padding:17px; }
@@ -108,6 +112,12 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .sticky-actions > div,.button-row { display:flex; gap:10px; }
 .sticky-actions > div > *,.button-row > * { flex:1; }
 .search-input,.form-panel input,.form-panel select,.form-panel textarea,.issue-form input,.issue-form select,.select-row select { width:100%; min-height:48px; border:1px solid var(--line); border-radius:13px; background:white; padding:0 14px; color:var(--ink); }
+.library-tools { display:grid; grid-template-columns:1fr auto; gap:10px; }
+.checkin-primary { display:grid; gap:8px; margin-top:24px; font-size:.8rem; font-weight:800; text-transform:capitalize; }
+.checkin-primary select { min-height:48px; border:1px solid var(--line); border-radius:13px; background:white; padding:0 14px; text-transform:capitalize; }
+.level-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.resolved-issues { margin-top:18px; color:var(--muted); }
+.resolved-issues summary { cursor:pointer; font-weight:800; }
 .form-panel textarea { min-height:110px; padding-block:12px; resize:vertical; }
 .horizontal-filters { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; scrollbar-width:none; }
 .select-row { display:flex; align-items:center; justify-content:space-between; gap:14px; font-weight:700; }
@@ -118,6 +128,9 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .card-actions button { width:34px; height:34px; border:1px solid var(--line); border-radius:10px; background:white; color:#9aa19b; }
 .card-actions button.selected { color:#cf9b00; background:#fff9dc; }
 .card-actions button.danger.selected { color:#bd4b3b; background:#fff0ed; }
+.card-actions button.build-selected { color:white; background:var(--forest); border-color:var(--forest); }
+.library-build { position:fixed; z-index:28; left:50%; transform:translateX(-50%); bottom:82px; width:min(calc(100% - 28px),732px); display:flex; align-items:center; justify-content:space-between; gap:14px; padding:12px 14px 12px 20px; border:1px solid #9eb497; border-radius:18px; background:rgba(251,252,248,.97); box-shadow:0 10px 35px rgba(30,45,36,.18); }
+.library-build .primary { min-height:44px; box-shadow:none; }
 .panel { background:var(--paper); border:1px solid var(--line); border-radius:22px; padding:20px; }
 .bar-chart { height:180px; display:flex; align-items:end; gap:8px; margin-top:24px; }
 .bar-column { height:100%; flex:1; display:flex; flex-direction:column; justify-content:end; gap:6px; text-align:center; }
@@ -153,6 +166,8 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .timer.complete { color:var(--lime); }
 .player-prescription { color:var(--lime); text-transform:uppercase; letter-spacing:.08em; }
 .player-centre small { margin-top:12px; color:#9fb6a8; }
+.player-adjustments { display:flex; flex-wrap:wrap; justify-content:center; gap:7px; margin-top:20px; }
+.player-adjustments button { border:1px solid #527260; background:#315845; color:#e5eee8; border-radius:9px; padding:7px 10px; font-size:.68rem; font-weight:800; }
 .player-actions { display:grid; gap:12px; }
 .player-actions > div { display:flex; gap:10px; }
 .player-actions > div > * { flex:1; background:#315845; border-color:#4d6f5e; color:white; }
@@ -166,6 +181,15 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .rating-grid button span { color:var(--lime); font-size:1.4rem; }
 .text-button { border:0; background:transparent; color:#b9cabe; margin-top:18px; padding:12px; }
 .empty { margin:15px 0 0; }
+.readiness { text-transform:uppercase; font-weight:800; }
+.readiness.ready { color:#347448; }.readiness.caution { color:#ad7000; }.readiness.recover { color:#a53d31; }
+.readiness-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:18px; }
+.readiness-row { display:grid; grid-template-columns:1fr auto; gap:3px 8px; padding:12px; border-radius:13px; background:#edf4e9; text-transform:capitalize; }
+.readiness-row.caution { background:#fff5d9; }.readiness-row.recover { background:#ffebe7; }
+.readiness-row span { font-size:.75rem; font-weight:800; }.readiness-row small { grid-column:1/-1; color:var(--muted); }
+.coach-row { display:flex; align-items:center; gap:12px; padding:13px 0; border-bottom:1px solid var(--line); }
+.coach-row:last-child { border-bottom:0; }.coach-row div { flex:1; }.coach-row small { display:block; color:var(--muted); margin-top:3px; }
+.coach-action { width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:var(--sage);font-weight:900; }.coach-action.regress { background:#ffebe7;color:#a53d31; }
 
 @media (max-width:560px) {
   .topbar { grid-template-columns:1fr auto; }
@@ -184,4 +208,5 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
   .exercise-trailing { grid-column:2; }
   .card-actions { display:flex; }
   .button-row { flex-direction:column; }
+  .library-tools { grid-template-columns:1fr; }
 }

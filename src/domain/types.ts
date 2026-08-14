@@ -52,6 +52,8 @@ export interface Issue {
   status: 'active' | 'resolved'
   note: string
   createdAt: string
+  side: 'left' | 'right' | 'bilateral'
+  resolvedAt: string | null
 }
 
 export interface Profile {
@@ -64,6 +66,14 @@ export interface Profile {
   avoidList: string[]
   favourites: string[]
   advancedBridges: boolean
+  height: string
+  weight: string
+  heightUnit: 'cm' | 'in'
+  weightUnit: 'kg' | 'lbs'
+  upper: Level
+  lower: Level
+  core: Level
+  conditioning: Level
 }
 
 export interface WorkoutExercise {
@@ -72,6 +82,9 @@ export interface WorkoutExercise {
   durationSeconds: number
   rationale: string
   section: 'Prepare' | 'Main work' | 'Condition' | 'Restore'
+  adjusted?: boolean
+  scaled?: 'up' | 'down' | null
+  originalLevel?: number
 }
 
 export interface WorkoutPlan {
@@ -83,6 +96,7 @@ export interface WorkoutPlan {
   createdAt: string
   exercises: WorkoutExercise[]
   insights: string[]
+  focusAreas: MuscleArea[]
 }
 
 export interface WorkoutSession {
@@ -95,6 +109,28 @@ export interface WorkoutSession {
   rating: 'easy' | 'good' | 'hard' | 'brutal' | 'unrated'
   completedExerciseIds: string[]
   exercises: Array<{ id: string; name: string; prescription: string; durationSeconds: number }>
+  focus: MuscleArea[]
+  areaLoadBefore: Partial<Record<Category, number>>
+}
+
+export interface ExerciseStat {
+  attempts: number
+  completed: number
+  easyGood: number
+  hard: number
+  brutal: number
+  consecutiveSuccesses: number
+  lastRating: WorkoutSession['rating'] | null
+  lastCompletedAt: string | null
+  lastDurationSeconds: number | null
+  progressionReady: boolean
+  coachDecision: 'progress' | 'maintain' | 'regress' | null
+}
+
+export interface DailyCheckIn {
+  date: string | null
+  tightAreas: MuscleArea[]
+  primaryArea: MuscleArea | null
 }
 
 export interface ActiveSession {
@@ -125,4 +161,9 @@ export interface AppState {
   savedPlans: WorkoutPlan[]
   customExercises: Exercise[]
   activeSession: ActiveSession | null
+  dailyCheckIn: DailyCheckIn
+  exerciseStats: Record<string, ExerciseStat>
+  rotation: Record<string, number>
+  legacyHistory: Record<string, number>
+  recovery: Record<'upper' | 'lower' | 'core' | 'conditioning', number>
 }

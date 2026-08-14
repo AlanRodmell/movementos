@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Shell, type View } from './components/Shell'
-import { generateCategoryWorkout, generateWorkout } from './domain/engine'
+import { adjustPlanPrescription, applySessionCompletion, createManualWorkout, generateCategoryWorkout, generateWorkout, getAreaLoadBreakdown, scalePlanExercise, swapPlanExercise } from './domain/engine'
 import type { ActiveSession, AppState, BuilderPreferences, Exercise, MuscleArea, Profile, WorkoutPlan, WorkoutSession } from './domain/types'
 import { HomeScreen } from './screens/HomeScreen'
 import { BuilderScreen } from './screens/BuilderScreen'
@@ -20,6 +20,7 @@ export default function App() {
   const [history, setHistory] = useState<View[]>([])
   const [plan, setPlan] = useState<WorkoutPlan | null>(null)
   const [lastPreferences, setLastPreferences] = useState<BuilderPreferences | null>(null)
+  const [createCustom,setCreateCustom]=useState(false)
   useEffect(() => saveState(state), [state])
 
   const navigate = (next: View) => { if (next !== view) setHistory(current => [...current, view]); setView(next); window.scrollTo(0,0) }
@@ -37,18 +38,22 @@ export default function App() {
     navigate('player')
   }
   const persistSession = useCallback((activeSession: ActiveSession) => setState(current => ({ ...current, activeSession })), [])
-  const complete = (session: WorkoutSession) => { setState(current => ({ ...current, activeSession:null, history: [session, ...current.history].slice(0,250) })); setHistory([]); setView('progress'); window.scrollTo(0,0) }
+  const complete = (session: WorkoutSession) => { setState(current => ({ ...applySessionCompletion(current, session), activeSession:null })); setHistory([]); setView('progress'); window.scrollTo(0,0) }
   const upsertCustom = (exercise: Exercise) => setState(current => ({ ...current, customExercises:[exercise, ...current.customExercises.filter(item => item.id !== exercise.id)].slice(0,250) }))
+  const avoidFromPlan = (index:number,id:string) => {
+    const nextState={...state,profile:{...state.profile,avoidList:[...new Set([...state.profile.avoidList,id])]}}
+    setState(nextState); if(plan)setPlan(swapPlanExercise(plan,index,nextState))
+  }
 
-  if (view === 'player' && state.activeSession) return <PlayerScreen session={state.activeSession} customExercises={state.customExercises} soundEnabled={state.profile.soundEnabled} onProgress={persistSession} onComplete={complete} onExit={() => { setState(current => ({ ...current, activeSession:null })); setHistory([]); setView('home') }}/>
+  if (view === 'player' && state.activeSession) return <PlayerScreen session={state.activeSession} state={state} customExercises={state.customExercises} soundEnabled={state.profile.soundEnabled} waitBetweenExercises={state.profile.waitBetweenExercises} areaLoadBefore={getAreaLoadBreakdown(state)} onProgress={persistSession} onComplete={complete} onExit={() => { setState(current => ({ ...current, activeSession:null })); setHistory([]); setView('home') }}/>
 
   let content: React.ReactNode
   if (view === 'home') content = <HomeScreen state={state} onBuild={() => navigate('builder')} onSuggested={suggested} onCategory={category} onResume={() => { setPlan(state.activeSession?.plan ?? null); navigate('player') }} onOpenPlan={index => { setPlan(state.savedPlans[index]); navigate('plan') }}/>
-  else if (view === 'builder') content = <BuilderScreen profile={state.profile} onGenerate={preferences => showPlan(generateWorkout(preferences, state), preferences)}/>
-  else if (view === 'plan' && plan) content = <PlanScreen plan={plan} customExercises={state.customExercises} onStart={startPlan} onSave={() => setState(current => ({ ...current, savedPlans: [plan, ...current.savedPlans.filter(item => item.id !== plan.id)].slice(0,50) }))} onRegenerate={() => showPlan(lastPreferences ? generateWorkout(lastPreferences,state,`${Date.now()}`) : generateCategoryWorkout('full_body',state), lastPreferences ?? undefined)}/>
-  else if (view === 'library') content = <LibraryScreen state={state} onToggleFavourite={id => toggleList('favourites',id)} onToggleAvoid={id => toggleList('avoidList',id)}/>
+  else if (view === 'builder') content = <BuilderScreen profile={state.profile} dailyCheckIn={state.dailyCheckIn} onCheckIn={dailyCheckIn => setState(current => ({ ...current,dailyCheckIn }))} onGenerate={preferences => showPlan(generateWorkout(preferences, state), preferences)}/>
+  else if (view === 'plan' && plan) content = <PlanScreen plan={plan} customExercises={state.customExercises} onStart={startPlan} onSave={() => setState(current => ({ ...current, savedPlans: [plan, ...current.savedPlans.filter(item => item.id !== plan.id)].slice(0,50) }))} onRegenerate={() => showPlan(lastPreferences ? generateWorkout(lastPreferences,state,`${Date.now()}`) : generateCategoryWorkout('full_body',state), lastPreferences ?? undefined)} onEasier={index=>setPlan(scalePlanExercise(plan,index,-1,state))} onHarder={index=>setPlan(scalePlanExercise(plan,index,1,state))} onAdjust={(index,direction)=>setPlan(adjustPlanPrescription(plan,index,direction))} onSwap={index=>setPlan(swapPlanExercise(plan,index,state))} onAvoid={avoidFromPlan}/>
+  else if (view === 'library') content = <LibraryScreen state={state} onToggleFavourite={id => toggleList('favourites',id)} onToggleAvoid={id => toggleList('avoidList',id)} onCreateExercise={()=>{setCreateCustom(true);navigate('profile')}} onBuildSelected={ids=>showPlan(createManualWorkout(ids,state))}/>
   else if (view === 'progress') content = <ProgressScreen state={state}/>
-  else content = <ProfileScreen state={state} onProfile={(profile: Profile) => setState(current => ({ ...current, profile }))} onReplaceState={setState} onAddIssue={(area,severity,note) => setState(current => ({ ...current, issues: [{ id:`issue_${Date.now()}`, area, severity, note:note.slice(0,500), status:'active', createdAt:new Date().toISOString() }, ...current.issues] }))} onResolveIssue={id => setState(current => ({ ...current, issues: current.issues.map(issue => issue.id === id ? { ...issue, status:'resolved' } : issue) }))} onSaveCustom={upsertCustom} onDeleteCustom={id => setState(current => ({ ...current, customExercises:current.customExercises.filter(item => item.id !== id) }))}/>
+  else content = <ProfileScreen state={state} initialCreate={createCustom} onCreateOpened={()=>setCreateCustom(false)} onProfile={(profile: Profile) => setState(current => ({ ...current, profile }))} onReplaceState={setState} onAddIssue={(area,severity,side,note) => setState(current => ({ ...current, issues: [{ id:`issue_${Date.now()}`, area, severity, side, note:note.slice(0,500), status:'active', createdAt:new Date().toISOString(), resolvedAt:null }, ...current.issues] }))} onResolveIssue={id => setState(current => ({ ...current, issues: current.issues.map(issue => issue.id === id ? { ...issue, status:'resolved', resolvedAt:new Date().toISOString() } : issue) }))} onReopenIssue={id => setState(current => ({ ...current, issues:current.issues.map(issue => issue.id===id?{...issue,status:'active',resolvedAt:null}:issue) }))} onDeleteIssue={id => setState(current => ({...current,issues:current.issues.filter(issue=>issue.id!==id)}))} onSaveCustom={upsertCustom} onDeleteCustom={id => setState(current => ({ ...current, customExercises:current.customExercises.filter(item => item.id !== id) }))}/>
 
   return <Shell view={view} title={titles[view]} onNavigate={navigate} onBack={goBack}>{content}</Shell>
 }

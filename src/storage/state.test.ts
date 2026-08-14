@@ -42,4 +42,18 @@ describe('state migration', () => {
     expect(output.savedWorkouts[0].groups[0].items[0].id).toBe('u1')
     expect(output.customExercises.u_custom_1.reps).toBe('12 reps')
   })
+
+  it('preserves check-ins, issues, and progression stats in the legacy backup',()=>{
+    const source={...defaultState,dailyCheckIn:{date:'Fri Aug 14 2026',tightAreas:['shoulders' as const],primaryArea:'shoulders' as const},issues:[{id:'i1',area:'shoulders' as const,severity:'moderate' as const,status:'resolved' as const,note:'old issue',createdAt:'2026-08-01T00:00:00.000Z',side:'left' as const,resolvedAt:'2026-08-02T00:00:00.000Z'}],exerciseStats:{u1:{attempts:3,completed:3,easyGood:3,hard:0,brutal:0,consecutiveSuccesses:3,lastRating:'good' as const,lastCompletedAt:'2026-08-14T00:00:00.000Z',lastDurationSeconds:45,progressionReady:true,coachDecision:'progress' as const}}}
+    const restored=normaliseState(serializeLegacyState(source))
+    expect(restored.dailyCheckIn).toEqual(source.dailyCheckIn)
+    expect(restored.issues[0].side).toBe('left')
+    expect(restored.exerciseStats.u1.progressionReady).toBe(true)
+  })
+
+  it('rebuilds progression history if an earlier React build erased exerciseStats',()=>{
+    const restored=normaliseState({workoutHistory:[1,2,3].map(index=>({id:`s${index}`,date:`2026-08-1${index}T10:00:00Z`,name:'Workout',rating:'good',exercises:[{id:'u1',name:'Push-Up',reps:'10 reps',secs:45}]})),exerciseStats:{}})
+    expect(restored.exerciseStats.u1.completed).toBe(3)
+    expect(restored.exerciseStats.u1.progressionReady).toBe(true)
+  })
 })

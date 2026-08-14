@@ -77,6 +77,7 @@
     -webkit-transform: translateZ(0);
   }
   .header-left { display: flex; align-items: center; gap: 12px; }
+  .header-action { appearance:none; -webkit-appearance:none; background:none; border:0; color:inherit; font:inherit; margin:0; padding:4px; }
   .back-btn { font-size: 1.2rem; cursor: pointer; color: var(--accent); font-weight: 800; display: none; padding-right: 8px;}
   .app-title { font-weight: 800; font-size: 1.2rem; color: var(--text); }
   .header-icons { display: flex; gap: 16px; font-size: 1.2rem; }
@@ -207,12 +208,12 @@
 <div class="max">
   <div class="app-header">
     <div class="header-left">
-      <div class="back-btn" id="back-btn" onclick="goBack()">‹ Back</div>
+      <button type="button" class="header-action back-btn" id="back-btn" onclick="goBack()">‹ Back</button>
       <div class="app-title" id="app-title">Movement OS</div>
     </div>
     <div class="header-icons">
-      <span class="home-nav-icon" id="home-nav-icon" onclick="navigateHome()" title="Home">⌂</span>
-      <span class="header-icon" onclick="navigate('profile')" title="Profile">👤</span>
+      <button type="button" class="header-action home-nav-icon" id="home-nav-icon" onclick="navigateHome()" aria-label="Home" title="Home">⌂</button>
+      <button type="button" class="header-action header-icon" onclick="navigate('profile')" aria-label="Profile" title="Profile">👤</button>
     </div>
   </div>
   <div id="app-content" class="app-content"></div>
@@ -1049,6 +1050,179 @@ let state = {
 const DEFAULT_BUILDER_STATE = () => ({ focus: {}, stretchAreas: {}, primaryArea: null, minutes: 30, maxEx: 'auto', targetSets: 'auto', selection: {}, rounds: 1, initialized: false, goal: 'general', areasSeeded: false });
 const DEFAULT_CHECKIN_STATE = () => ({ step: 1, broad: [], specific: [], primary: null });
 
+function isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function cleanText(value, maxLength = 500) {
+  return String(value == null ? '' : value).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').slice(0, maxLength);
+}
+
+function escapeHtml(value) {
+  return cleanText(value, 5000)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function isSafeId(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(value);
+}
+
+function safeHttpUrl(value) {
+  const raw = cleanText(value, 1000).trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw, window.location.href);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.href : '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function safeVideoLink(value, label = '▶ Watch Video', extraStyle = '') {
+  const url = safeHttpUrl(value);
+  if (!url) return '';
+  return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent); font-weight:bold; text-decoration:none;${extraStyle}">${escapeHtml(label)}</a>`;
+}
+
+function clampNumber(value, min, max, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
+}
+
+function sanitiseIdList(value) {
+  return Array.isArray(value) ? [...new Set(value.filter(isSafeId))].slice(0, 500) : [];
+}
+
+function sanitiseNumericMap(value) {
+  const output = {};
+  if (!isPlainObject(value)) return output;
+  Object.entries(value).slice(0, 1000).forEach(([key, raw]) => {
+    if (isSafeId(key)) output[key] = clampNumber(raw, -1000000, 1000000, 0);
+  });
+  return output;
+}
+
+function sanitiseCustomExercises(value) {
+  const output = {};
+  if (!isPlainObject(value)) return output;
+  Object.entries(value).slice(0, 500).forEach(([id, ex]) => {
+    if (!isSafeId(id) || !isPlainObject(ex)) return;
+    const prefix = id[0];
+    if (!'ulkcmbw'.includes(prefix)) return;
+    output[id] = {
+      name: cleanText(ex.name, 120) || 'Custom Exercise',
+      reps: cleanText(ex.reps, 80) || '10 reps',
+      secs: Math.round(clampNumber(ex.secs, 1, 3600, 30)),
+      detail: cleanText(ex.detail, 600) || 'Custom exercise.',
+      bp: Array.isArray(ex.bp) ? ex.bp.map(v => cleanText(v, 40)).slice(0, 10) : [],
+      tier: Math.round(clampNumber(ex.tier, 0, 5, 2)),
+      family: isSafeId(ex.family) ? ex.family : 'custom',
+      isCustom: true,
+      customBodyArea: isSafeId(ex.customBodyArea) ? ex.customBodyArea : (CUSTOM_EXERCISE_TAXONOMY_ROOT[prefix] || 'full_body'),
+      videoUrl: safeHttpUrl(ex.videoUrl)
+    };
+  });
+  return output;
+}
+
+function sanitiseWorkoutGroups(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 100).map((group, groupIndex) => {
+    const source = isPlainObject(group) ? group : {};
+    const items = Array.isArray(source.items) ? source.items : [];
+    return {
+      heading: cleanText(source.heading, 120) || 'Session',
+      items: items.slice(0, 500).filter(item => isPlainObject(item) && isSafeId(item.id)).map((item, itemIndex) => ({
+        id: item.id,
+        reps: cleanText(item.reps, 80),
+        secs: Math.round(clampNumber(item.secs, 1, 3600, 30)),
+        adjusted: !!item.adjusted,
+        scaled: item.scaled === 'up' || item.scaled === 'down' ? item.scaled : null,
+        originalTier: Math.round(clampNumber(item.originalTier, 0, 5, 0)),
+        ukey: isSafeId(item.ukey) ? item.ukey : `${item.id}_${groupIndex}_${itemIndex}`
+      }))
+    };
+  });
+}
+
+function sanitiseSavedWorkouts(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 100).filter(isPlainObject).map((workout, index) => ({
+    id: isSafeId(workout.id) ? workout.id : `fav_import_${index}`,
+    name: cleanText(workout.name, 120) || 'Saved Workout',
+    groups: sanitiseWorkoutGroups(workout.groups)
+  }));
+}
+
+function sanitiseIssues(value) {
+  if (!Array.isArray(value)) return [];
+  const severities = new Set(ISSUE_SEVERITIES.map(item => item.k));
+  return value.slice(0, 250).filter(isPlainObject).map((issue, index) => ({
+    id: isSafeId(issue.id) ? issue.id : `iss_import_${index}`,
+    area: ISSUE_AREA_OPTIONS.includes(issue.area) ? issue.area : 'lower_back',
+    side: ['left', 'right', 'bilateral'].includes(issue.side) ? issue.side : 'bilateral',
+    severity: severities.has(issue.severity) ? issue.severity : 'mild',
+    note: cleanText(issue.note, 600),
+    status: issue.status === 'resolved' ? 'resolved' : 'active',
+    createdAt: cleanText(issue.createdAt, 40),
+    resolvedAt: issue.resolvedAt ? cleanText(issue.resolvedAt, 40) : null
+  }));
+}
+
+function sanitiseWorkoutHistory(value) {
+  if (!Array.isArray(value)) return [];
+  const ratings = new Set(['easy', 'good', 'hard', 'brutal', 'unrated']);
+  return value.slice(0, 100).filter(isPlainObject).map((session, index) => ({
+    id: isSafeId(session.id) ? session.id : `session_import_${index}`,
+    date: Number.isFinite(Date.parse(session.date)) ? new Date(session.date).toISOString() : new Date(0).toISOString(),
+    name: cleanText(session.name, 120) || 'Workout',
+    durationSeconds: Math.round(clampNumber(session.durationSeconds, 0, 86400, 0)),
+    plannedExercises: Math.round(clampNumber(session.plannedExercises, 0, 1000, 0)),
+    completedExercises: Math.round(clampNumber(session.completedExercises, 0, 1000, 0)),
+    rating: ratings.has(session.rating) ? session.rating : 'unrated',
+    focus: sanitiseIdList(session.focus),
+    intention: session.intention === 'recovery' ? 'recovery' : 'workout',
+    exercises: (Array.isArray(session.exercises) ? session.exercises : []).slice(0, 1000).map(item => {
+      const ex = isPlainObject(item) ? item : { id: item };
+      return {
+        id: isSafeId(ex.id) ? ex.id : '',
+        name: cleanText(ex.name || ex.id, 120),
+        family: isSafeId(ex.family) ? ex.family : null,
+        reps: cleanText(ex.reps, 80),
+        detail: cleanText(ex.detail, 600),
+        secs: Math.round(clampNumber(ex.secs, 0, 3600, 0))
+      };
+    }).filter(ex => ex.id),
+    areaLoadBefore: isPlainObject(session.areaLoadBefore) ? session.areaLoadBefore : {}
+  }));
+}
+
+function sanitiseExerciseStats(value) {
+  const output = {};
+  if (!isPlainObject(value)) return output;
+  Object.entries(value).slice(0, 1000).forEach(([id, raw]) => {
+    if (!isSafeId(id) || !isPlainObject(raw)) return;
+    output[id] = {
+      attempts: Math.round(clampNumber(raw.attempts, 0, 100000, 0)),
+      completed: Math.round(clampNumber(raw.completed, 0, 100000, 0)),
+      easyGood: Math.round(clampNumber(raw.easyGood, 0, 100000, 0)),
+      hard: Math.round(clampNumber(raw.hard, 0, 100000, 0)),
+      brutal: Math.round(clampNumber(raw.brutal, 0, 100000, 0)),
+      consecutiveSuccesses: Math.round(clampNumber(raw.consecutiveSuccesses, 0, 100000, 0)),
+      lastRating: ['easy', 'good', 'hard', 'brutal', 'unrated'].includes(raw.lastRating) ? raw.lastRating : null,
+      lastCompletedAt: raw.lastCompletedAt ? cleanText(raw.lastCompletedAt, 40) : null,
+      lastDurationSeconds: clampNumber(raw.lastDurationSeconds, 0, 3600, 0),
+      progressionReady: !!raw.progressionReady,
+      coachDecision: ['progress', 'maintain', 'regress'].includes(raw.coachDecision) ? raw.coachDecision : null
+    };
+  });
+  return output;
+}
+
 let appState = {
   view: 'home', 
   history: [],  
@@ -1076,35 +1250,52 @@ let appState = {
   player: {
     list: [], idx: 0, phase: 'work', secondsLeft: 0, totalSeconds: 0,
     running: false, timerHandle: null, startedAt: null, elapsedSeconds: 0,
-    completedIds: [], currentStartedAt: null
+    completedIds: [], completedIndexes: [], currentStartedAt: null,
+    deadlineAt: null, elapsedStartedAt: null
   }
 };
 
 function normaliseState(saved){
+  const source = isPlainObject(saved) ? saved : {};
+  const sourceProfile = isPlainObject(source.profile) ? source.profile : {};
   const merged = {
-    ...state,
-    ...(saved || {}),
     schemaVersion: STATE_VERSION,
-    dailyCheckIn: (saved && saved.dailyCheckIn)
-      ? { date: null, tightAreas: [], primaryArea: null, ...saved.dailyCheckIn }
+    dailyCheckIn: isPlainObject(source.dailyCheckIn)
+      ? {
+          date: cleanText(source.dailyCheckIn.date, 40) || null,
+          tightAreas: sanitiseIdList(source.dailyCheckIn.tightAreas),
+          primaryArea: isSafeId(source.dailyCheckIn.primaryArea) ? source.dailyCheckIn.primaryArea : null
+        }
       : { date: null, tightAreas: [], primaryArea: null },
     profile: {
-      ...state.profile,
-      ...((saved && saved.profile) || {}),
-      heightUnit: ((saved && saved.profile && saved.profile.heightUnit) || 'cm'),
-      weightUnit: ((saved && saved.profile && saved.profile.weightUnit) || 'kg'),
-      trainingGoal: ((saved && saved.profile && saved.profile.trainingGoal) || 'general'),
-      unlocks: { ...state.profile.unlocks, ...(((saved && saved.profile) || {}).unlocks || {}) },
-      avoidList: Array.isArray(((saved && saved.profile) || {}).avoidList) ? saved.profile.avoidList : [],
-      alwaysInclude: Array.isArray(((saved && saved.profile) || {}).alwaysInclude) ? saved.profile.alwaysInclude : []
+      height: cleanText(sourceProfile.height, 12),
+      weight: cleanText(sourceProfile.weight, 12),
+      heightUnit: sourceProfile.heightUnit === 'in' ? 'in' : 'cm',
+      weightUnit: sourceProfile.weightUnit === 'lbs' ? 'lbs' : 'kg',
+      trainingGoal: ['general', 'strength', 'muscle', 'endurance'].includes(sourceProfile.trainingGoal) ? sourceProfile.trainingGoal : 'general',
+      upper: Math.round(clampNumber(sourceProfile.upper, 1, 3, 2)),
+      lower: Math.round(clampNumber(sourceProfile.lower, 1, 3, 2)),
+      core: Math.round(clampNumber(sourceProfile.core, 1, 3, 2)),
+      conditioning: Math.round(clampNumber(sourceProfile.conditioning, 1, 3, 2)),
+      unlocks: { advancedBridges: !!(isPlainObject(sourceProfile.unlocks) && sourceProfile.unlocks.advancedBridges) },
+      soundEnabled: sourceProfile.soundEnabled !== false,
+      waitBetweenExercises: sourceProfile.waitBetweenExercises !== false,
+      avoidList: sanitiseIdList(sourceProfile.avoidList),
+      alwaysInclude: sanitiseIdList(sourceProfile.alwaysInclude)
     },
-    rotation: { ...state.rotation, ...((saved && saved.rotation) || {}) },
-    recovery: { ...state.recovery, ...((saved && saved.recovery) || {}) },
-    workoutHistory: Array.isArray(saved && saved.workoutHistory) ? saved.workoutHistory : [],
-    exerciseStats: (saved && saved.exerciseStats && typeof saved.exerciseStats === "object") ? saved.exerciseStats : {},
-    savedWorkouts: Array.isArray(saved && saved.savedWorkouts) ? saved.savedWorkouts : [],
-    customExercises: (saved && typeof saved.customExercises === 'object') ? saved.customExercises : {},
-    issues: Array.isArray(saved && saved.issues) ? saved.issues : []
+    rotation: sanitiseNumericMap(source.rotation),
+    history: sanitiseNumericMap(source.history),
+    recovery: {
+      upper: clampNumber(source.recovery && source.recovery.upper, 0, 100000, 0),
+      lower: clampNumber(source.recovery && source.recovery.lower, 0, 100000, 0),
+      core: clampNumber(source.recovery && source.recovery.core, 0, 100000, 0),
+      conditioning: clampNumber(source.recovery && source.recovery.conditioning, 0, 100000, 0)
+    },
+    workoutHistory: sanitiseWorkoutHistory(source.workoutHistory),
+    exerciseStats: sanitiseExerciseStats(source.exerciseStats),
+    savedWorkouts: sanitiseSavedWorkouts(source.savedWorkouts),
+    customExercises: sanitiseCustomExercises(source.customExercises),
+    issues: sanitiseIssues(source.issues)
   };
   Object.entries(merged.customExercises || {}).forEach(([id, ex]) => {
     if (!ex.customBodyArea) ex.customBodyArea = CUSTOM_EXERCISE_TAXONOMY_ROOT[id[0]] || 'full_body';
@@ -1152,20 +1343,16 @@ function saveState(){
   try { localStorage.setItem("movementos:state", JSON.stringify(state)); } catch(e) {}
 }
 
-function navigate(viewName) {
-  if (appState.view === 'player' && viewName !== 'player') stopPlayerTimer();
-  if (appState.view !== viewName) appState.history.push(appState.view);
-  appState.view = viewName;
-  
+function syncHeader(viewName) {
   const backBtn = document.getElementById('back-btn');
   const title = document.getElementById('app-title');
   const homeNav = document.getElementById('home-nav-icon');
-  
+  if (!backBtn || !title) return;
+
   if (viewName === 'home') {
       backBtn.style.display = 'none';
       if (homeNav) homeNav.style.display = 'none';
       title.textContent = "Movement OS";
-      appState.history = []; 
   } else {
       backBtn.style.display = 'block';
       if (homeNav) homeNav.style.display = 'inline-block';
@@ -1180,6 +1367,13 @@ function navigate(viewName) {
       };
       title.textContent = titles[viewName] || "Movement OS";
   }
+}
+
+function navigate(viewName) {
+  if (appState.view === 'player' && viewName !== 'player') stopPlayerTimer();
+  if (appState.view !== viewName) appState.history.push(appState.view);
+  appState.view = viewName;
+  if (viewName === 'home') appState.history = [];
   
   render();
   window.scrollTo(0,0);
@@ -2136,6 +2330,7 @@ function shuffleWorkout() {
 function render() {
   const content = document.getElementById('app-content');
   content.innerHTML = ''; 
+  syncHeader(appState.view);
 
   switch(appState.view) {
     case 'home': renderHome(content); break;
@@ -2161,6 +2356,29 @@ function render() {
     case 'log_issue': renderLogIssue(content); break;
   }
   applyModeClass();
+  enhanceInteractiveElements();
+}
+
+function enhanceInteractiveElements() {
+  const nativeSelector = 'button, a, input, select, textarea, summary';
+  document.querySelectorAll('[onclick]').forEach(el => {
+    if (el.matches(nativeSelector) || el.dataset.keyboardEnhanced === 'true') return;
+    const handler = (el.getAttribute('onclick') || '').replace(/\s+/g, '');
+    if (handler === 'event.stopPropagation()') return;
+    el.setAttribute('role', 'button');
+    el.tabIndex = 0;
+    if (!el.hasAttribute('aria-label') && el.title) el.setAttribute('aria-label', el.title);
+    if (el.classList.contains('pill') || el.classList.contains('checkbox')) {
+      el.setAttribute('aria-pressed', el.classList.contains('active') || el.classList.contains('checked') ? 'true' : 'false');
+    }
+    el.dataset.keyboardEnhanced = 'true';
+    el.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      event.stopPropagation();
+      el.click();
+    });
+  });
 }
 
 function startNewSession() {
@@ -2239,9 +2457,8 @@ function renderReview(container) {
       const earned = isEarnedProgression(item.id);
       const tierPill = tier > 0 ? `<span class="tier-pill${earned ? ' progression-pill' : ''}" title="${earned ? 'Earned progression — above your normal profile tier' : `Tier ${tier}`}">${earned ? '↑ T'+tier : 'T'+tier}</span>` : "";
       const customPill = ex.isCustom ? `<span class="tier-pill custom-pill" title="Custom Exercise">★</span>` : "";
-      const videoLink = ex.videoUrl
-        ? `<br><a href="${ex.videoUrl}" target="_blank" style="color:var(--accent); font-weight:bold; text-decoration:none; display:inline-block; margin-top:4px;">▶ Watch Video</a>`
-        : "";
+      const safeVideo = safeVideoLink(ex.videoUrl, '▶ Watch Video', ' display:inline-block; margin-top:4px;');
+      const videoLink = safeVideo ? `<br>${safeVideo}` : '';
 
       let rowClasses = "exercise";
       if (item.adjusted) rowClasses += " adjusted";
@@ -2261,18 +2478,18 @@ function renderReview(container) {
         `;
 
       return `
-        <div class="${rowClasses}" id="rev-${ukey}" data-gidx="${groupIndex}" data-iidx="${itemIndex}" onclick="toggleReviewExpand('${ukey}')">
+        <div class="${rowClasses}" id="rev-${escapeHtml(ukey)}" data-gidx="${groupIndex}" data-iidx="${itemIndex}" onclick="toggleReviewExpand('${ukey}')">
           <div class="ex-top">
             <div style="display:flex; align-items:center; gap:8px; min-width:0;">
               <span class="drag-handle" onpointerdown="event.stopPropagation(); startDrag(event, ${groupIndex}, ${itemIndex})" onclick="event.stopPropagation()" title="Drag to reorder">⠿</span>
-              <span class="ex-name">${ex.name}${tierPill}${customPill}</span>
+              <span class="ex-name">${escapeHtml(ex.name)}${tierPill}${customPill}</span>
             </div>
             <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
-              <input type="text" class="rep-input" value="${reps}" onchange="updateReviewReps(${groupIndex}, ${itemIndex}, this.value)" onclick="event.stopPropagation()">
+              <input type="text" class="rep-input" value="${escapeHtml(reps)}" onchange="updateReviewReps(${groupIndex}, ${itemIndex}, this.value)" onclick="event.stopPropagation()">
               <span onclick="event.stopPropagation(); removeReviewExercise(${groupIndex}, ${itemIndex})" style="cursor:pointer; font-size:1.05rem; color:var(--danger); padding:2px 4px;" title="Remove">🗑️</span>
             </div>
           </div>
-          <div class="ex-detail">${detail}${videoLink}</div>
+          <div class="ex-detail">${escapeHtml(detail)}${videoLink}</div>
           <div class="scale-controls" onclick="event.stopPropagation()">${scaleControls}</div>
         </div>`;
     }).join("");
@@ -2281,24 +2498,24 @@ function renderReview(container) {
       ? `<div class="empty-state" style="padding:12px 10px;">No exercises in this section.</div>`
       : "";
 
-    return `<div class="group-label">${group.heading || "Session"}</div>
+    return `<div class="group-label">${escapeHtml(group.heading || "Session")}</div>
       <div class="exercise-list" id="group-items-${groupIndex}">${itemsHtml}</div>
       ${emptyNote}
       <div class="pill" style="width:100%; text-align:center; box-sizing:border-box; margin-bottom:12px; color:var(--accent); font-weight:700;" onclick="openAddExercise(${groupIndex})">+ Add Exercise</div>`;
   }).join("");
 
   const coachCard = appState.workout.coachNote
-    ? `<div class="card" style="border-left:4px solid var(--accent);"><strong>Coach insight</strong><p style="font-size:.85rem;color:var(--muted);margin:6px 0 0;">${appState.workout.coachNote}</p></div>`
+    ? `<div class="card" style="border-left:4px solid var(--accent);"><strong>Coach insight</strong><p style="font-size:.85rem;color:var(--muted);margin:6px 0 0;">${escapeHtml(appState.workout.coachNote)}</p></div>`
     : "";
   const warnings = Array.isArray(appState.workout.poolWarnings) ? appState.workout.poolWarnings : [];
   const warningCard = warnings.length
-    ? `<div class="card" style="border-left:4px solid #D97706;"><strong>Planning notes</strong><ul style="font-size:.85rem;color:var(--muted);margin:8px 0 0;padding-left:20px;">${warnings.map(warning => `<li>${warning}</li>`).join("")}</ul></div>`
+    ? `<div class="card" style="border-left:4px solid #D97706;"><strong>Planning notes</strong><ul style="font-size:.85rem;color:var(--muted);margin:8px 0 0;padding-left:20px;">${warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul></div>`
     : "";
   const itemCount = groups.reduce((count, group) => count + (Array.isArray(group.items) ? group.items.length : 0), 0);
 
   container.innerHTML = coachCard + warningCard + `
     <div class="card">
-      <div class="card-title">${appState.workout.label || "Review Session"}</div>
+      <div class="card-title">${escapeHtml(appState.workout.label || "Review Session")}</div>
       <p style="text-align:center; font-size:0.85rem; color:var(--muted); margin-top:-10px;">Tap any exercise for instructions, or to Swap, Scale, Remove, or Avoid. Drag ⠿ to reorder.</p>
       ${listHtml}
     </div>
@@ -2732,25 +2949,26 @@ function renderCreateList(container) {
      const ex = EXLIB[id];
      const isSel = appState.builder.selection[id] !== undefined;
      const repDisplay = isSel 
-        ? `<input type="text" class="rep-input" value="${appState.builder.selection[id]}" onchange="updateCustomReps('${id}', this.value)" onclick="event.stopPropagation()">` 
-        : `<span class="ex-time">${ex.reps}</span>`;
+        ? `<input type="text" class="rep-input" value="${escapeHtml(appState.builder.selection[id])}" onchange="updateCustomReps('${id}', this.value)" onclick="event.stopPropagation()">`
+        : `<span class="ex-time">${escapeHtml(ex.reps)}</span>`;
      const tierPill = ex.tier > 0 ? `<span class="tier-pill" title="Tier ${ex.tier}">T${ex.tier}</span>` : ``;
      const customPill = ex.isCustom ? `<span class="tier-pill custom-pill" title="Custom Exercise">★</span>` : ``;
-     const videoLink = ex.videoUrl ? `<br><a href="${ex.videoUrl}" target="_blank" style="color:var(--accent); font-weight:bold; text-decoration:none; display:inline-block; margin-top:4px;">▶ Watch Video</a>` : "";
+     const safeVideo = safeVideoLink(ex.videoUrl, '▶ Watch Video', ' display:inline-block; margin-top:4px;');
+     const videoLink = safeVideo ? `<br>${safeVideo}` : '';
 
      return `
       <div class="exercise${isSel?" active-border":""}" id="create-${id}" onclick="toggleCustomBuild('${id}')">
         <div class="ex-top">
           <div class="ex-left">
             <div class="checkbox${isSel?" checked":""}">${isSel?"✓":""}</div>
-            <span class="ex-name">${ex.name}${tierPill}${customPill}</span>
+            <span class="ex-name">${escapeHtml(ex.name)}${tierPill}${customPill}</span>
           </div>
           <div style="display:flex; align-items:center; gap:10px;">
             <span onclick="event.stopPropagation(); toggleCreateExpand('${id}')" style="cursor:pointer; font-size:1.05rem; color:var(--muted); padding:2px 4px;" title="Instructions">ⓘ</span>
             ${repDisplay}
           </div>
         </div>
-        <div class="ex-detail">${ex.detail}${videoLink}</div>
+        <div class="ex-detail">${escapeHtml(ex.detail)}${videoLink}</div>
       </div>`;
   }).join("");
 
@@ -2802,7 +3020,10 @@ function filterExerciseLibraryList() {
    const input = document.getElementById('el-search');
    appState.exerciseLibrary.search = input ? input.value : '';
    const results = document.getElementById('el-results');
-   if (results) results.innerHTML = buildExerciseLibraryResultsHtml();
+   if (results) {
+      results.innerHTML = buildExerciseLibraryResultsHtml();
+      enhanceInteractiveElements();
+   }
 }
 
 function toggleLibraryExpand(id) {
@@ -2891,18 +3112,19 @@ function buildExerciseLibraryResultsHtml() {
        const tierPill = ex.tier > 0 ? `<span class="tier-pill" title="Tier ${ex.tier}">T${ex.tier}</span>` : ``;
        const customPill = ex.isCustom ? `<span class="tier-pill custom-pill" title="Custom Exercise">★</span>` : ``;
        const stapleBadge = isStaple ? `<span class="tier-pill" style="color:#D97706; border-color:rgba(217,119,6,0.35); background:rgba(217,119,6,0.10);" title="Staple Exercise">⭐ Staple</span>` : ``;
-       const videoLink = ex.videoUrl ? `<br><a href="${ex.videoUrl}" target="_blank" style="color:var(--accent); font-weight:bold; text-decoration:none; display:inline-block; margin-top:4px;">▶ Watch Video</a>` : "";
+       const safeVideo = safeVideoLink(ex.videoUrl, '▶ Watch Video', ' display:inline-block; margin-top:4px;');
+       const videoLink = safeVideo ? `<br>${safeVideo}` : '';
 
        const addControl = isAvoided
            ? `<span style="font-size:0.75rem; color:var(--danger); font-style:italic; white-space:nowrap;">Avoided</span>`
-           : `${isSel ? `<input type="text" class="rep-input" value="${appState.builder.selection[id]}" onchange="updateCustomReps('${id}', this.value)" onclick="event.stopPropagation()">` : ''}
+           : `${isSel ? `<input type="text" class="rep-input" value="${escapeHtml(appState.builder.selection[id])}" onchange="updateCustomReps('${id}', this.value)" onclick="event.stopPropagation()">` : ''}
              <div class="checkbox${isSel?" checked":""}" style="${isSel?'':'color:var(--muted); border-color:var(--muted);'}" onclick="event.stopPropagation(); toggleLibraryBuild('${id}')" title="${isSel?'Remove from routine':'Add to routine'}">${isSel?"✓":"+"}</div>`;
 
        return `
        <div class="exercise${isSel?" active-border":""}${isStaple?" staple-row":""}${isAvoided?" avoided-row":""}" id="el-${id}" onclick="toggleLibraryExpand('${id}')">
            <div class="ex-top">
            <div class="ex-left">
-               <span class="ex-name">${ex.name}${tierPill}${customPill}${stapleBadge}</span>
+               <span class="ex-name">${escapeHtml(ex.name)}${tierPill}${customPill}${stapleBadge}</span>
            </div>
            <div style="display:flex; align-items:center; gap:8px;">
                <span onclick="event.stopPropagation(); toggleLibraryStaple('${id}')" style="cursor:pointer; font-size:1.05rem; color:${isStaple?'#D97706':'var(--muted)'}; padding:2px 4px;" title="${isStaple?'Remove Staple':'Mark as Staple — always include when generating'}">⭐</span>
@@ -2911,7 +3133,7 @@ function buildExerciseLibraryResultsHtml() {
                ${addControl}
            </div>
            </div>
-           <div class="ex-detail">${ex.detail}${videoLink}</div>
+           <div class="ex-detail">${escapeHtml(ex.detail)}${videoLink}</div>
        </div>`;
    }).join("");
 }
@@ -2932,7 +3154,7 @@ function renderExerciseLibrary(container) {
    container.innerHTML = `
        <div class="card">
        <div class="card-title">Exercise Library</div>
-       <input type="text" id="el-search" placeholder="Search exercises..." value="${appState.exerciseLibrary.search || ''}"
+       <input type="text" id="el-search" placeholder="Search exercises..." value="${escapeHtml(appState.exerciseLibrary.search || '')}"
                oninput="filterExerciseLibraryList()"
                style="width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--border); font-size:0.95rem; font-family:inherit; margin-bottom:14px; box-sizing:border-box;">
        <div class="pill-row">${pillHtml}</div>
@@ -3224,21 +3446,22 @@ function buildAddExerciseResultsHtml() {
       const ex = EXLIB[id];
       const tierPill = ex.tier > 0 ? `<span class="tier-pill" title="Tier ${ex.tier}">T${ex.tier}</span>` : ``;
       const customPill = ex.isCustom ? `<span class="tier-pill custom-pill" title="Custom Exercise">★</span>` : ``;
-      const videoLink = ex.videoUrl ? `<br><a href="${ex.videoUrl}" target="_blank" style="color:var(--accent); font-weight:bold; text-decoration:none; display:inline-block; margin-top:4px;">▶ Watch Video</a>` : "";
+      const safeVideo = safeVideoLink(ex.videoUrl, '▶ Watch Video', ' display:inline-block; margin-top:4px;');
+      const videoLink = safeVideo ? `<br>${safeVideo}` : '';
       
       return `
         <div class="exercise" id="add-${id}">
           <div class="ex-top" onclick="addExerciseToGroup('${id}')">
             <div class="ex-left">
-              <span class="ex-name">${ex.name}${tierPill}${customPill}</span>
+              <span class="ex-name">${escapeHtml(ex.name)}${tierPill}${customPill}</span>
             </div>
             <div style="display:flex; align-items:center; gap:10px;">
               <span onclick="event.stopPropagation(); toggleAddExpand('${id}')" style="cursor:pointer; font-size:1.05rem; color:var(--muted); padding:2px 4px;" title="Instructions">ⓘ</span>
-              <span class="ex-time">${ex.reps}</span>
+              <span class="ex-time">${escapeHtml(ex.reps)}</span>
               <span style="color:var(--accent); font-weight:800; font-size:1.2rem; padding:0 2px;">+</span>
             </div>
           </div>
-          <div class="ex-detail">${ex.detail}${videoLink}</div>
+          <div class="ex-detail">${escapeHtml(ex.detail)}${videoLink}</div>
         </div>`;
    }).join("");
 }
@@ -3247,7 +3470,10 @@ function filterAddExerciseList() {
    const input = document.getElementById('ae-search');
    appState.addExercise.search = input ? input.value : '';
    const results = document.getElementById('ae-results');
-   if (results) results.innerHTML = buildAddExerciseResultsHtml();
+   if (results) {
+      results.innerHTML = buildAddExerciseResultsHtml();
+      enhanceInteractiveElements();
+   }
 }
 
 function renderAddExercise(container) {
@@ -3259,7 +3485,7 @@ function renderAddExercise(container) {
    container.innerHTML = `
      <div class="card">
        <div class="card-title">Add an Exercise</div>
-       <input type="text" id="ae-search" placeholder="Search exercises..." value="${appState.addExercise.search || ''}"
+       <input type="text" id="ae-search" placeholder="Search exercises..." value="${escapeHtml(appState.addExercise.search || '')}"
               oninput="filterAddExerciseList()"
               style="width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--border); font-size:0.95rem; font-family:inherit; margin-bottom:14px; box-sizing:border-box;">
        <div class="pill-row">${pillHtml}</div>
@@ -3371,31 +3597,66 @@ function initPlayer() {
     list: list, idx: 0, phase: 'get_ready',
     secondsLeft: 5, totalSeconds: 5,
     running: false, timerHandle: null, startedAt: Date.now(),
-    elapsedSeconds: 0, completedIds: [], currentStartedAt: Date.now()
+    elapsedSeconds: 0, completedIds: [], completedIndexes: [], currentStartedAt: Date.now(),
+    deadlineAt: null, elapsedStartedAt: null, lastAnnouncedSecond: null
   };
 }
 
-function stopPlayerTimer() {
+function clearPlayerTimerHandle() {
   if (appState.player.timerHandle) {
     clearInterval(appState.player.timerHandle);
     appState.player.timerHandle = null;
   }
+}
+
+function isPlayerElapsedPhase() {
+  const p = appState.player;
+  const item = p.list[p.idx];
+  return (p.phase === 'work' || p.phase === 'switch_sides') && item && (item.reps || '').includes('reps');
+}
+
+function syncPlayerClock(now = Date.now()) {
+  const p = appState.player;
+  if (!p.running) return;
+  if (isPlayerElapsedPhase()) {
+    if (p.elapsedStartedAt) p.elapsedSeconds = Math.max(0, Math.floor((now - p.elapsedStartedAt) / 1000));
+  } else if (p.deadlineAt) {
+    p.secondsLeft = Math.max(0, Math.ceil((p.deadlineAt - now) / 1000));
+  }
+}
+
+function stopPlayerTimer() {
+  syncPlayerClock();
+  clearPlayerTimerHandle();
   appState.player.running = false;
+  appState.player.deadlineAt = null;
+  appState.player.elapsedStartedAt = null;
 }
 
 function startPlayerTimer() {
-  stopPlayerTimer();
+  clearPlayerTimerHandle();
   getAudioCtx();
-  appState.player.running = true;
-  appState.player.timerHandle = setInterval(playerTick, 1000);
+  const p = appState.player;
+  const now = Date.now();
+  p.running = true;
+  p.lastAnnouncedSecond = null;
+  if (isPlayerElapsedPhase()) {
+    p.elapsedStartedAt = now - (p.elapsedSeconds * 1000);
+    p.deadlineAt = null;
+  } else {
+    p.deadlineAt = now + (Math.max(0, p.secondsLeft) * 1000);
+    p.elapsedStartedAt = null;
+  }
+  p.timerHandle = setInterval(playerTick, 250);
   updatePlayerDOM();
 }
 
 function playerTick() {
   const p = appState.player;
+  if (!p.running) return;
+  syncPlayerClock();
   
   if (p.phase === 'get_ready') {
-      p.secondsLeft -= 1;
       if (p.secondsLeft <= 0) {
           p.phase = 'work';
           const firstItem = p.list[0];
@@ -3404,9 +3665,11 @@ function playerTick() {
           p.totalSeconds = halfSecs;
           p.elapsedSeconds = 0;
           playCompletionChime();
+          startPlayerTimer();
           render();
       } else {
-          playCountdownTick();
+          if (p.secondsLeft <= 5 && p.lastAnnouncedSecond !== p.secondsLeft) playCountdownTick();
+          p.lastAnnouncedSecond = p.secondsLeft;
           updatePlayerDOM();
       }
       return;
@@ -3415,25 +3678,27 @@ function playerTick() {
   const isRepBased = p.list[p.idx] && p.list[p.idx].reps.includes('reps');
 
   if (p.phase === 'work' && isRepBased) {
-      p.elapsedSeconds += 1;
       updatePlayerDOM();
   } else if (p.phase === 'switch_sides' && isRepBased) {
-      p.elapsedSeconds += 1;
       updatePlayerDOM();
   } else {
-      p.secondsLeft -= 1;
       if (p.secondsLeft <= 0) {
         playCompletionChime();
         onPhaseTimerComplete();
       } else {
-        if (p.secondsLeft <= 5) playCountdownTick();
+        if (p.secondsLeft <= 5 && p.lastAnnouncedSecond !== p.secondsLeft) playCountdownTick();
+        p.lastAnnouncedSecond = p.secondsLeft;
         updatePlayerDOM();
       }
   }
 }
 
 function playerAdjustTime(amount) {
-    appState.player.secondsLeft = Math.max(1, appState.player.secondsLeft + amount);
+    const p = appState.player;
+    syncPlayerClock();
+    p.secondsLeft = Math.max(1, p.secondsLeft + amount);
+    if (p.running) p.deadlineAt = Date.now() + (p.secondsLeft * 1000);
+    p.lastAnnouncedSecond = null;
     updatePlayerDOM();
 }
 
@@ -3525,9 +3790,7 @@ function togglePlayerPause() {
   if (p.running) {
     stopPlayerTimer(); 
   } else {
-    p.running = true;
-    p.timerHandle = setInterval(playerTick, 1000);
-    getAudioCtx(); 
+    startPlayerTimer();
   }
   render(); 
 }
@@ -3587,14 +3850,14 @@ function continueFromWaiting() {
 
 function onPhaseTimerComplete() {
   const p = appState.player;
+  const target = targetAfterCurrentPhase();
   if (p.phase === 'work' || p.phase === 'switch_sides') {
-    recordExerciseCompletion(p.list[p.idx] && p.list[p.idx].id);
-    if (p.idx >= p.list.length - 1 && targetAfterCurrentPhase() !== 'switch_sides') {
+    if (target !== 'switch_sides') recordExerciseCompletion(p.list[p.idx] && p.list[p.idx].id, p.idx);
+    if (p.idx >= p.list.length - 1 && target !== 'switch_sides') {
         finishWorkout();
         return;
     }
   }
-  const target = targetAfterCurrentPhase();
   
   if (state.profile.waitBetweenExercises && target !== 'switch_sides' && p.phase !== 'rest') enterWaitingState(target);
   else commitPhaseTransition(target);
@@ -3604,10 +3867,11 @@ function logAndContinue() {
   stopPlayerTimer();
   const p = appState.player;
   if (p.phase === 'waiting') return continueFromWaiting();
+  const target = targetAfterCurrentPhase();
   if (p.phase === 'work' || p.phase === 'switch_sides') {
-    recordExerciseCompletion(p.list[p.idx] && p.list[p.idx].id);
+    if (target !== 'switch_sides') recordExerciseCompletion(p.list[p.idx] && p.list[p.idx].id, p.idx);
   }
-  commitPhaseTransition(targetAfterCurrentPhase());
+  commitPhaseTransition(target);
 }
 
 function skipCurrentExercise() {
@@ -3615,9 +3879,14 @@ function skipCurrentExercise() {
   commitPhaseTransition('rest');
 }
 
-function recordExerciseCompletion(id){
+function recordExerciseCompletion(id, index){
   if (!id || !EXLIB[id]) return;
   const p = appState.player;
+  if (!Array.isArray(p.completedIds)) p.completedIds = [];
+  if (!Array.isArray(p.completedIndexes)) p.completedIndexes = [];
+  const safeIndex = Number.isInteger(index) ? index : p.idx;
+  if (p.completedIndexes.includes(safeIndex)) return;
+  p.completedIndexes.push(safeIndex);
   p.completedIds.push(id);
 }
 
@@ -3651,7 +3920,11 @@ function completeWorkoutSession(rating){
   const p = appState.player;
   const started = p.startedAt || Date.now();
   const duration = Math.max(1, Math.round((Date.now() - started) / 1000));
-  const uniqueIds = [...new Set(p.completedIds || [])];
+  const completedItems = Array.isArray(p.completedIndexes) && p.completedIndexes.length
+    ? p.completedIndexes.map(index => p.list[index]).filter(Boolean)
+    : (p.completedIds || []).map(id => p.list.find(item => item.id === id)).filter(Boolean);
+  const completedIds = completedItems.map(item => item.id);
+  const uniqueIds = [...new Set(completedIds)];
   const areaLoad = getAreaLoadBreakdown(72);
   const session = {
     id: 'session_' + Date.now(),
@@ -3659,11 +3932,18 @@ function completeWorkoutSession(rating){
     name: appState.workout.label || 'Workout',
     durationSeconds: duration,
     plannedExercises: p.list ? p.list.length : 0,
-    completedExercises: p.completedIds ? p.completedIds.length : 0,
+    completedExercises: completedItems.length,
     rating: rating,
     focus: Object.keys(appState.builder.focus || {}),
     intention: appState.flowIntention || 'workout',
-    exercises: (p.completedIds || []).map(id => ({ id, name: EXLIB[id] ? EXLIB[id].name : id, family: EXLIB[id] ? EXLIB[id].family : null })),
+    exercises: completedItems.map(item => ({
+      id: item.id,
+      name: EXLIB[item.id] ? EXLIB[item.id].name : item.id,
+      family: EXLIB[item.id] ? EXLIB[item.id].family : null,
+      reps: item.reps || (EXLIB[item.id] && EXLIB[item.id].reps) || '',
+      detail: (EXLIB[item.id] && EXLIB[item.id].detail) || '',
+      secs: item.secs || (EXLIB[item.id] && EXLIB[item.id].secs) || 0
+    })),
     areaLoadBefore: areaLoad
   };
   state.workoutHistory.unshift(session);
@@ -3709,7 +3989,7 @@ function renderPlayer(container) {
         <div style="font-size:2.5rem; margin-bottom:8px;">⏳</div>
         <div class="player-ex-name">Get Ready...</div>
         <div class="player-timer" style="font-size:6rem; margin:30px 0;">${p.secondsLeft}</div>
-        <div class="player-next" style="border:none;">First up: <span style="color:var(--text);">${p.list[0] ? EXLIB[p.list[0].id].name : ''}</span></div>
+        <div class="player-next" style="border:none;">First up: <span style="color:var(--text);">${p.list[0] ? escapeHtml(EXLIB[p.list[0].id].name) : ''}</span></div>
       </div>
       <div style="text-align:center;">
           <span style="color:var(--danger); font-size:0.95rem; font-weight:700; cursor:pointer; padding:10px;" onclick="navigate('home')">Cancel Session</span>
@@ -3735,16 +4015,15 @@ function renderPlayer(container) {
     }
 
     const upEx = upcomingItem ? EXLIB[upcomingItem.id] : null;
-    const videoLink = upEx && upEx.videoUrl 
-        ? `<div style="margin-top:20px;"><a href="${upEx.videoUrl}" target="_blank" style="color:var(--accent); font-weight:800; text-decoration:none; display:inline-flex; align-items:center; gap:6px; padding:12px 18px; border:2px solid var(--accent); border-radius:var(--radius-md); background:var(--bg);">▶ Watch Next Video</a></div>` 
-        : "";
+    const safeNextVideo = upEx ? safeVideoLink(upEx.videoUrl, '▶ Watch Next Video', ' display:inline-flex; align-items:center; gap:6px; padding:12px 18px; border:2px solid var(--accent); border-radius:var(--radius-md); background:var(--bg);') : '';
+    const videoLink = safeNextVideo ? `<div style="margin-top:20px;">${safeNextVideo}</div>` : '';
 
     container.innerHTML = `
       <div class="card" style="padding:40px 20px; text-align:center; min-height:520px; display:flex; flex-direction:column; justify-content:center; align-items:center;">
         <div style="font-size:2.5rem; margin-bottom:8px;">✅</div>
         <div class="player-ex-name">Nice work!</div>
         <p style="color:var(--muted); font-size:0.95rem; margin-top:8px;">Take your time. Tap Continue whenever you're ready.</p>
-        <div class="player-next" style="width:100%; border-top:none; padding-top:0; margin-top:32px;">Up Next: <span style="color:var(--text);">${nextLabel}</span></div>
+        <div class="player-next" style="width:100%; border-top:none; padding-top:0; margin-top:32px;">Up Next: <span style="color:var(--text);">${escapeHtml(nextLabel)}</span></div>
         ${videoLink}
       </div>
       <button class="btn" style="margin-bottom:24px;" onclick="continueFromWaiting()">▶ Continue</button>
@@ -3773,10 +4052,10 @@ function renderPlayer(container) {
           activeControls = `
               <div style="display:flex; justify-content:center; align-items:center; gap:24px; margin: 16px 0 8px;">
                   <button style="background:transparent; border:none; color:var(--muted); font-weight:800; font-size:2rem; padding:10px; cursor:pointer;" onclick="playerAdjustReps(-1)">-</button>
-                  <div style="font-size:4.5rem; font-weight:900; color:var(--accent); line-height:1; font-variant-numeric:tabular-nums;">${repNum || current.reps}</div>
+                  <div style="font-size:4.5rem; font-weight:900; color:var(--accent); line-height:1; font-variant-numeric:tabular-nums;">${escapeHtml(repNum || current.reps)}</div>
                   <button style="background:transparent; border:none; color:var(--muted); font-weight:800; font-size:2rem; padding:10px; cursor:pointer;" onclick="playerAdjustReps(1)">+</button>
               </div>
-              <p style="text-align:center; font-weight:700; color:var(--muted); margin:0 0 10px; font-size:0.85rem; text-transform:uppercase; letter-spacing:0.04em;">Target: ${current.reps}</p>
+              <p style="text-align:center; font-weight:700; color:var(--muted); margin:0 0 10px; font-size:0.85rem; text-transform:uppercase; letter-spacing:0.04em;">Target: ${escapeHtml(current.reps)}</p>
               <div style="color:var(--muted); font-size:0.9rem; text-align:center;">Elapsed: <span class="player-timer-display">${formatTime(p.elapsedSeconds)}</span></div>
           `;
       } else {
@@ -3786,7 +4065,7 @@ function renderPlayer(container) {
                   <div class="player-timer" style="margin:0;">${formatTime(p.secondsLeft)}</div>
                   <button style="background:transparent; border:none; color:var(--muted); font-weight:800; font-size:1.15rem; padding:10px; cursor:pointer;" onclick="playerAdjustTime(5)">+5s</button>
               </div>
-              <p style="text-align:center; font-weight:700; color:var(--muted); margin:0; font-size:0.85rem; text-transform:uppercase; letter-spacing:0.04em;">Target: ${current.reps}</p>
+              <p style="text-align:center; font-weight:700; color:var(--muted); margin:0; font-size:0.85rem; text-transform:uppercase; letter-spacing:0.04em;">Target: ${escapeHtml(current.reps)}</p>
           `;
       }
   } else {
@@ -3798,27 +4077,27 @@ function renderPlayer(container) {
       
       <div>
         <div class="group-label" style="text-align:center; border:none; margin-bottom:20px;">
-            ${current.heading} <span style="opacity:0.4; margin:0 4px;">•</span> Exercise ${p.idx + 1} of ${p.list.length}
+            ${escapeHtml(current.heading)} <span style="opacity:0.4; margin:0 4px;">•</span> Exercise ${p.idx + 1} of ${p.list.length}
         </div>
 
         ${isRest
           ? `<div class="player-ex-name" style="color:var(--muted);">Rest</div>`
-          : `<div class="player-ex-name">${currentEx.name}${phaseLabel}</div>`
+          : `<div class="player-ex-name">${escapeHtml(currentEx.name)}${phaseLabel}</div>`
         }
         
         ${activeControls}
         
-        ${!isRest ? `<p style="text-align:center; font-size:0.95rem; line-height:1.45; color:var(--muted); margin-top:24px;">${currentEx.detail}</p>` : ``}
+        ${!isRest ? `<p style="text-align:center; font-size:0.95rem; line-height:1.45; color:var(--muted); margin-top:24px;">${escapeHtml(currentEx.detail)}</p>` : ``}
       </div>
 
       <div style="margin-top:auto; background: var(--bg); border-radius: var(--radius-md); padding: 12px; border: 1px solid var(--border);">
         <div style="text-align:center; font-size: 0.8rem; font-weight:800; color:var(--muted); text-transform:uppercase; margin-bottom: 6px;">Up Next</div>
-        <div style="font-weight: 800; text-align: center; font-size: 1.1rem; color:var(--text); margin-bottom: 8px;">${nextName || "Last exercise — finish strong!"}</div>
+        <div style="font-weight: 800; text-align: center; font-size: 1.1rem; color:var(--text); margin-bottom: 8px;">${escapeHtml(nextName || "Last exercise — finish strong!")}</div>
         ${nextItem ? `
         <div style="display:flex; justify-content:center; gap:8px; align-items:center;">
              <button class="tier-action" style="padding:4px 8px; font-size:0.7rem; min-width:auto;" onclick="playerNextScale(-1)">Easier</button>
              <button class="tier-action" style="padding:4px 8px; font-size:0.7rem; min-width:auto;" onclick="playerNextScale(1)">Harder</button>
-             <span style="font-weight:800; font-size:0.8rem; color:var(--accent); margin:0 4px;">${nextItem.reps}</span>
+             <span style="font-weight:800; font-size:0.8rem; color:var(--accent); margin:0 4px;">${escapeHtml(nextItem.reps)}</span>
              <button class="round-btn" style="width:22px; height:22px; font-size:1rem;" onclick="playerNextAdjustReps(-1)">-</button>
              <button class="round-btn" style="width:22px; height:22px; font-size:1rem;" onclick="playerNextAdjustReps(1)">+</button>
              <button class="scale-btn" style="padding:4px 8px; font-size:0.7rem; margin-left:8px;" onclick="playerNextSwap()">Swap</button>
@@ -3863,7 +4142,7 @@ function submitSoreFeedback(feedback) {
 function renderComplete(container) {
   const p = appState.player;
   const count = p.list ? p.list.length : 0;
-  const completed = p.completedIds ? p.completedIds.length : 0;
+  const completed = Array.isArray(p.completedIndexes) && p.completedIndexes.length ? p.completedIndexes.length : (p.completedIds ? p.completedIds.length : 0);
   const duration = p.startedAt ? Math.max(1, Math.round((Date.now() - p.startedAt) / 1000)) : 0;
   const fmt = formatTime(duration);
 
@@ -3873,7 +4152,7 @@ function renderComplete(container) {
       soreFeedbackHtml = `
           <div style="margin-top:26px; padding:16px; background:var(--bg); border-radius:var(--radius-md); border:1px solid var(--border);">
               <div style="font-weight:800; font-size:0.95rem; margin-bottom:4px; color:var(--text);">How are your sore areas feeling?</div>
-              <p style="font-size:0.8rem; color:var(--muted); margin:0 0 12px;">We adapted this session for your ${labels}.</p>
+              <p style="font-size:0.8rem; color:var(--muted); margin:0 0 12px;">We adapted this session for your ${escapeHtml(labels)}.</p>
               <div style="display:flex; gap:8px;">
                   <button class="btn btn-secondary" style="flex:1; padding:10px; font-size:0.85rem; margin-bottom:0;" onclick="submitSoreFeedback('better')">Better</button>
                   <button class="btn btn-secondary" style="flex:1; padding:10px; font-size:0.85rem; margin-bottom:0;" onclick="submitSoreFeedback('same')">Same</button>
@@ -3937,7 +4216,7 @@ function renderLibrary(container) {
     state.savedWorkouts.forEach(w => {
       savedHtml += `
         <div class="preset-card" onclick="loadSavedWorkout('${w.id}')">
-          <div class="preset-left"><span class="preset-icon">⭐</span><span class="preset-name">${w.name}</span></div>
+          <div class="preset-left"><span class="preset-icon">⭐</span><span class="preset-name">${escapeHtml(w.name)}</span></div>
           <div style="display:flex; align-items:center; gap:8px;"><span class="chev" onclick="deleteSavedWorkout('${w.id}', event)" title="Delete">🗑️</span></div>
         </div>`;
     });
@@ -4158,7 +4437,7 @@ function renderProgress(container){
 
   let topExHtml = stats.slice(0,3).map(([id, st]) => `
     <div class="preset-card" style="padding:10px 0;">
-        <div class="preset-left"><span class="preset-name">${EXLIB[id].name}</span></div>
+        <div class="preset-left"><span class="preset-name">${escapeHtml(EXLIB[id].name)}</span></div>
         <span style="font-size:0.8rem; color:var(--muted);">${st.completed} sets</span>
     </div>
   `).join('');
@@ -4182,8 +4461,8 @@ function renderProgress(container){
     </div>
     <div class="card">
       <div class="card-title">Coach Recommendations</div>
-      ${progressable.length ? progressable.map(x => `<div class="preset-card" style="padding:10px 0;"><div class="preset-left"><span class="preset-icon">⬆️</span><span class="preset-name">${EXLIB[x.id].name}</span></div><span style="color:var(--muted);font-size:.8rem;">Progress</span></div>`).join('') : ''}
-      ${regressions.length ? regressions.map(x => `<div class="preset-card" style="padding:10px 0;"><div class="preset-left"><span class="preset-icon">↘️</span><span class="preset-name">${EXLIB[x.id].name}</span></div><span style="color:var(--muted);font-size:.8rem;">Ease off</span></div>`).join('') : ''}
+      ${progressable.length ? progressable.map(x => `<div class="preset-card" style="padding:10px 0;"><div class="preset-left"><span class="preset-icon">⬆️</span><span class="preset-name">${escapeHtml(EXLIB[x.id].name)}</span></div><span style="color:var(--muted);font-size:.8rem;">Progress</span></div>`).join('') : ''}
+      ${regressions.length ? regressions.map(x => `<div class="preset-card" style="padding:10px 0;"><div class="preset-left"><span class="preset-icon">↘️</span><span class="preset-name">${escapeHtml(EXLIB[x.id].name)}</span></div><span style="color:var(--muted);font-size:.8rem;">Ease off</span></div>`).join('') : ''}
       ${!progressable.length && !regressions.length ? `<p class="empty-state">No changes recommended yet. Keep training and rating sessions.</p>` : ''}
     </div>
     <div class="card">
@@ -4193,7 +4472,7 @@ function renderProgress(container){
     </div>
     <div class="card">
       <div class="card-title">Recent Sessions</div>
-      ${sessions.slice(0,5).map(s => `<div class="preset-card" style="padding:10px 0;"><div><strong>${s.name}</strong><div style="font-size:.78rem;color:var(--muted);">${new Date(s.date).toLocaleDateString()} · ${formatTime(s.durationSeconds)}</div></div><span>${s.rating === 'easy' ? '😌' : s.rating === 'good' ? '🙂' : s.rating === 'hard' ? '😅' : s.rating === 'brutal' ? '🥵' : '—'}</span></div>`).join('') || `<p class="empty-state">No completed workouts logged yet.</p>`}
+      ${sessions.slice(0,5).map(s => `<div class="preset-card" style="padding:10px 0;"><div><strong>${escapeHtml(s.name)}</strong><div style="font-size:.78rem;color:var(--muted);">${new Date(s.date).toLocaleDateString()} · ${formatTime(s.durationSeconds)}</div></div><span>${s.rating === 'easy' ? '😌' : s.rating === 'good' ? '🙂' : s.rating === 'hard' ? '😅' : s.rating === 'brutal' ? '🥵' : '—'}</span></div>`).join('') || `<p class="empty-state">No completed workouts logged yet.</p>`}
     </div>
     <div class="card">
       <div class="card-title">Data Export &amp; Backup</div>
@@ -4224,9 +4503,9 @@ function renderIssues(container) {
          <div class="ex-top">
             <div class="ex-left" style="pointer-events:auto;">
                <div>
-                  <div class="ex-name">${areaLabel(iss.area)}${sideLabel}</div>
-                  <div style="font-size:0.78rem; font-weight:700; color:${sevColor}; margin-top:2px;">${sevLabel.split(' - ')[0]}</div>
-                  ${iss.note ? `<div style="font-size:0.82rem; color:var(--muted); margin-top:4px;">${iss.note}</div>` : ''}
+                  <div class="ex-name">${escapeHtml(areaLabel(iss.area))}${escapeHtml(sideLabel)}</div>
+                  <div style="font-size:0.78rem; font-weight:700; color:${sevColor}; margin-top:2px;">${escapeHtml(sevLabel.split(' - ')[0])}</div>
+                  ${iss.note ? `<div style="font-size:0.82rem; color:var(--muted); margin-top:4px;">${escapeHtml(iss.note)}</div>` : ''}
                </div>
             </div>
          </div>
@@ -4306,6 +4585,12 @@ function downloadFile(content, fileName, mimeType) {
     URL.revokeObjectURL(url);
 }
 
+function csvCell(value) {
+    let text = String(value == null ? '' : value);
+    if (/^[=+\-@\t\r]/.test(text)) text = "'" + text;
+    return `"${text.replace(/"/g, '""')}"`;
+}
+
 function exportHistoryCSV() {
     if (!state.workoutHistory || state.workoutHistory.length === 0) {
         alert("No workout history to export.");
@@ -4313,13 +4598,13 @@ function exportHistoryCSV() {
     }
     let csv = "Date,Workout Name,Duration (sec),Rating,Focus,Completed Exercises,Exercise Details\n";
     state.workoutHistory.forEach(s => {
-        let d = new Date(s.date).toLocaleDateString();
-        let name = `"${(s.name || '').replace(/"/g, '""')}"`;
+        let d = csvCell(new Date(s.date).toLocaleDateString());
+        let name = csvCell(s.name || '');
         let dur = s.durationSeconds || 0;
-        let rating = s.rating || 'unrated';
-        let focus = `"${(s.focus || []).join(', ')}"`;
+        let rating = csvCell(s.rating || 'unrated');
+        let focus = csvCell((s.focus || []).join(', '));
         let exercises = s.exercises || [];
-        let details = `"${exercises.map(e => `${e.name || e.id || ''}: ${e.reps || e.detail || ''}`).join(' | ').replace(/"/g, '""')}"`;
+        let details = csvCell(exercises.map(e => `${e.name || e.id || ''}: ${e.reps || e.detail || ''}`).join(' | '));
         csv += `${d},${name},${dur},${rating},${focus},${exercises.length},${details}\n`;
     });
     downloadFile(csv, 'movement-os-history.csv', 'text/csv;charset=utf-8;');
@@ -4334,6 +4619,11 @@ function handleImportFile(event) {
     const input = event.target;
     const file = input.files && input.files[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+        alert("That backup is too large to import safely (5 MB maximum).");
+        input.value = '';
+        return;
+    }
 
     const reader = new FileReader();
     reader.onload = function(e) {
@@ -4344,7 +4634,8 @@ function handleImportFile(event) {
             alert("That file doesn't look like a valid Movement OS backup (invalid JSON).");
             return;
         }
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        const knownKeys = ['profile', 'workoutHistory', 'savedWorkouts', 'customExercises', 'issues', 'exerciseStats'];
+        if (!isPlainObject(parsed) || !knownKeys.some(key => Object.prototype.hasOwnProperty.call(parsed, key))) {
             alert("That file doesn't look like a valid Movement OS backup.");
             return;
         }
@@ -4415,7 +4706,7 @@ function renderProfile(container) {
        ? state.profile.avoidList.map(id => {
            const ex = EXLIB[id];
            return `<div class="profile-row" style="padding: 6px 0;">
-                       <span style="font-size:0.9rem;">${ex ? ex.name : id}</span>
+                       <span style="font-size:0.9rem;">${escapeHtml(ex ? ex.name : id)}</span>
                        <span onclick="unavoidExercise('${id}')" style="color:var(--danger); cursor:pointer; font-size:0.85rem; font-weight:bold;">Remove</span>
                    </div>`;
        }).join('')
@@ -4425,7 +4716,7 @@ function renderProfile(container) {
        ? Object.keys(state.customExercises).map(id => {
            const ex = EXLIB[id];
            return `<div class="profile-row" style="padding: 6px 0;">
-                       <span style="font-size:0.9rem;">${ex ? ex.name : id}</span>
+                       <span style="font-size:0.9rem;">${escapeHtml(ex ? ex.name : id)}</span>
                        <span onclick="removeCustomExercise('${id}')" style="color:var(--danger); cursor:pointer; font-size:0.85rem; font-weight:bold;">Delete</span>
                    </div>`;
        }).join('')
@@ -4435,7 +4726,7 @@ function renderProfile(container) {
        ? state.profile.alwaysInclude.map(id => {
            const ex = EXLIB[id];
            return `<div class="profile-row" style="padding: 6px 0;">
-                       <span style="font-size:0.9rem;">${ex ? ex.name : id}</span>
+                       <span style="font-size:0.9rem;">${escapeHtml(ex ? ex.name : id)}</span>
                        <span onclick="toggleStapleExercise('${id}')" style="color:var(--danger); cursor:pointer; font-size:0.85rem; font-weight:bold;">Remove</span>
                    </div>`;
        }).join('')
@@ -4447,7 +4738,7 @@ function renderProfile(container) {
          <div class="profile-row">
             <span class="profile-label">Height</span>
             <div style="display:flex; gap:6px;">
-              <input type="number" class="profile-input" value="${state.profile.height || ''}" placeholder="e.g. 175" style="width:80px; text-align:right;" onchange="setProfileInput('height', this.value)">
+              <input type="number" class="profile-input" value="${escapeHtml(state.profile.height || '')}" placeholder="e.g. 175" style="width:80px; text-align:right;" onchange="setProfileInput('height', this.value)">
               <select class="profile-select" onchange="setProfileInput('heightUnit', this.value)">
                 <option value="cm" ${state.profile.heightUnit==='cm'?'selected':''}>cm</option>
                 <option value="in" ${state.profile.heightUnit==='in'?'selected':''}>in</option>
@@ -4457,7 +4748,7 @@ function renderProfile(container) {
          <div class="profile-row">
             <span class="profile-label">Weight</span>
             <div style="display:flex; gap:6px;">
-              <input type="number" class="profile-input" value="${state.profile.weight || ''}" placeholder="e.g. 75" style="width:80px; text-align:right;" onchange="setProfileInput('weight', this.value)">
+              <input type="number" class="profile-input" value="${escapeHtml(state.profile.weight || '')}" placeholder="e.g. 75" style="width:80px; text-align:right;" onchange="setProfileInput('weight', this.value)">
               <select class="profile-select" onchange="setProfileInput('weightUnit', this.value)">
                 <option value="kg" ${state.profile.weightUnit==='kg'?'selected':''}>kg</option>
                 <option value="lbs" ${state.profile.weightUnit==='lbs'?'selected':''}>lbs</option>
@@ -4524,6 +4815,9 @@ function renderProfile(container) {
 /* ============================================================
    INIT
    ============================================================ */
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && appState.player.running) playerTick();
+});
 loadState();
 navigate('home');
 </script>

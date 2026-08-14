@@ -1,0 +1,13 @@
+{
+  "name": "Movement OS",
+  "short_name": "Movement OS",
+  "description": "Adaptive, private workouts that run entirely on your device.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#edf0ea",
+  "theme_color": "#244c3c",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

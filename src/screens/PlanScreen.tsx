@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { exerciseById } from '../data/exercises'
+import { exerciseById, exerciseVideoUrl } from '../data/exercises'
 import type { Exercise, WorkoutExercise, WorkoutPlan } from '../domain/types'
-import { ExerciseCard } from '../components/ExerciseCard'
 
 interface PlanGroup {
   key: string
@@ -14,6 +13,10 @@ interface DragState {
   fromIndex: number
   targetIndex: number
   pointerId: number
+  startY: number
+  offsetY: number
+  rowHeight: number
+  moved: boolean
 }
 
 function groupKey(item: WorkoutExercise) {
@@ -32,7 +35,7 @@ function planGroups(plan: WorkoutPlan): PlanGroup[] {
       const note = item.section === 'Prepare'
         ? 'Specific preparation for the work ahead'
         : item.section === 'Main work'
-          ? 'Drag one set to update the circuit order everywhere'
+          ? 'Drag any exercise to update the circuit order in every set'
           : item.section === 'Condition'
             ? 'Capacity finisher'
             : 'Mobility and mindful close-out'
@@ -44,28 +47,56 @@ function planGroups(plan: WorkoutPlan): PlanGroup[] {
   return groups
 }
 
+function shortGroupLabel(group: PlanGroup) {
+  const set = group.label.match(/Set (\d+)/)?.[1]
+  if (set) return `Set ${set}`
+  return group.label
+}
+
+function pretty(value: string) {
+  return value.replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase())
+}
+
 export function PlanScreen({ plan, customExercises, onStart, onSave, onRegenerate, onEasier, onHarder, onAdjust, onSwap, onReorder, onRemove, onAvoid }: { plan: WorkoutPlan; customExercises: Exercise[]; onStart: () => void; onSave: () => void; onRegenerate: () => void; onEasier:(index:number)=>void; onHarder:(index:number)=>void; onAdjust:(index:number,direction:-1|1)=>void; onSwap:(index:number)=>void; onReorder:(fromIndex:number,toIndex:number)=>void; onRemove:(index:number)=>void; onAvoid:(index:number,id:string)=>void }) {
+  const groups = planGroups(plan)
+  const firstMainGroup = groups.find(group => group.key.startsWith('main-'))?.key ?? groups[0]?.key ?? ''
+  const [activeGroupKey, setActiveGroupKey] = useState(firstMainGroup)
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
   const dragRef = useRef<DragState | null>(null)
+  const groupSignature = groups.map(group => group.key).join('|')
   const resolve = (id: string) => exerciseById.get(id) ?? customExercises.find(exercise => exercise.id === id)
-  const groups = planGroups(plan)
+  const activeGroup = groups.find(group => group.key === activeGroupKey) ?? groups[0]
+  const selectedEntry = selectedIndex === null ? null : plan.exercises[selectedIndex]
+  const selectedExercise = selectedEntry ? resolve(selectedEntry.exerciseId) : null
 
-  const sameGroup = (fromIndex: number, toIndex: number) => {
-    const from = plan.exercises[fromIndex]
-    const to = plan.exercises[toIndex]
-    return Boolean(from && to && groupKey(from) === groupKey(to))
-  }
+  useEffect(() => {
+    if (!groups.some(group => group.key === activeGroupKey)) setActiveGroupKey(firstMainGroup)
+  }, [activeGroupKey, firstMainGroup, groupSignature])
+
+  useEffect(() => {
+    if (selectedIndex !== null && selectedIndex >= plan.exercises.length) setSelectedIndex(null)
+  }, [plan.exercises.length, selectedIndex])
 
   const updateDrag = (next: DragState | null) => {
     dragRef.current = next
     setDrag(next)
   }
 
-  const beginDrag = (event: ReactPointerEvent<HTMLButtonElement>, index: number) => {
-    if (event.button !== 0) return
+  const beginDrag = (event: ReactPointerEvent<HTMLDivElement>, index: number) => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest('button,a,input,select,textarea')) return
     event.preventDefault()
-    updateDrag({ fromIndex:index, targetIndex:index, pointerId:event.pointerId })
-    try { event.currentTarget.setPointerCapture?.(event.pointerId) } catch { /* global listeners keep the drag active */ }
+    event.currentTarget.focus()
+    updateDrag({
+      fromIndex:index,
+      targetIndex:index,
+      pointerId:event.pointerId,
+      startY:event.clientY,
+      offsetY:0,
+      rowHeight:event.currentTarget.getBoundingClientRect().height + 8,
+      moved:false,
+    })
+    try { event.currentTarget.setPointerCapture?.(event.pointerId) } catch { /* global listeners keep the gesture active */ }
   }
 
   useEffect(() => {
@@ -74,19 +105,26 @@ export function PlanScreen({ plan, customExercises, onStart, onSave, onRegenerat
     const moveDrag = (event: PointerEvent) => {
       const current = dragRef.current
       if (!current || current.pointerId !== event.pointerId) return
+      const offsetY = event.clientY - current.startY
+      if (!current.moved && Math.abs(offsetY) < 6) return
       event.preventDefault()
-      const row = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-reorder-index]')
-      const targetIndex = Number(row?.dataset.reorderIndex)
-      if (Number.isInteger(targetIndex) && sameGroup(current.fromIndex, targetIndex) && targetIndex !== current.targetIndex) {
-        updateDrag({ ...current, targetIndex })
-      }
+      const source = plan.exercises[current.fromIndex]
+      const groupIndexes = plan.exercises.map((item, index) => source && groupKey(item) === groupKey(source) ? index : -1).filter(index => index >= 0)
+      const sourcePosition = groupIndexes.indexOf(current.fromIndex)
+      const targetPosition = Math.max(0, Math.min(groupIndexes.length - 1, sourcePosition + Math.round(offsetY / current.rowHeight)))
+      const targetIndex = groupIndexes[targetPosition] ?? current.targetIndex
+      updateDrag({ ...current, targetIndex, offsetY, moved:true })
     }
 
     const finishDrag = (event: PointerEvent) => {
       const completed = dragRef.current
       if (!completed || completed.pointerId !== event.pointerId) return
       updateDrag(null)
-      if (completed.fromIndex !== completed.targetIndex) onReorder(completed.fromIndex, completed.targetIndex)
+      if (completed.moved) {
+        if (completed.fromIndex !== completed.targetIndex) onReorder(completed.fromIndex, completed.targetIndex)
+      } else {
+        setSelectedIndex(current => current === completed.fromIndex ? null : completed.fromIndex)
+      }
     }
 
     const cancelDrag = (event: PointerEvent) => {
@@ -103,7 +141,12 @@ export function PlanScreen({ plan, customExercises, onStart, onSave, onRegenerat
     }
   }, [drag?.pointerId, drag?.fromIndex, onReorder, plan])
 
-  const keyboardReorder = (event: ReactKeyboardEvent<HTMLButtonElement>, group: PlanGroup, index: number) => {
+  const keyboardRowAction = (event: ReactKeyboardEvent<HTMLDivElement>, group: PlanGroup, index: number) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      setSelectedIndex(current => current === index ? null : index)
+      return
+    }
     if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return
     event.preventDefault()
     const position = group.indexes.indexOf(index)
@@ -112,57 +155,97 @@ export function PlanScreen({ plan, customExercises, onStart, onSave, onRegenerat
     if (targetIndex !== undefined) onReorder(index, targetIndex)
   }
 
+  const activateGroup = (key: string) => {
+    setActiveGroupKey(key)
+    setSelectedIndex(null)
+  }
+
+  const closeInspector = () => setSelectedIndex(null)
+
   return <div className="screen plan-screen">
     <section className="plan-hero">
-      <span className="eyebrow">YOUR SESSION</span>
-      <h1>{plan.name}</h1>
-      <div className="plan-meta"><span>~{plan.durationMinutes} min</span><span>{plan.exercises.length} steps</span><span>{plan.goal}</span></div>
+      <div className="plan-title-block"><span className="eyebrow">YOUR SESSION</span><h1>{plan.name}</h1></div>
+      <div className="plan-fact"><span>◎</span><div><strong>{pretty(plan.goal)}</strong><small>Focus</small></div></div>
+      <div className="plan-fact"><span>◷</span><div><strong>{plan.durationMinutes} min</strong><small>Est. duration</small></div></div>
+      <button className="primary plan-start" onClick={onStart}>Start session <span>→</span></button>
     </section>
-    <section className="algorithm-note"><span>✦</span><div><strong>Built around you</strong><p>{plan.insights.join(' ')}</p></div></section>
-    <div className="routine-map" aria-label="Routine structure">
-      {groups.map((group, index) => <span key={group.key}><b>{index + 1}</b>{group.label.replace('Main circuit — ', '')}</span>)}
-    </div>
-    {groups.map(group => <section key={group.key} className={`plan-section routine-set ${group.key.startsWith('main-') ? 'main-set' : ''}`}>
-      <div className="section-heading">
-        <div><span className="section-kicker">SESSION BLOCK</span><h2>{group.label}</h2><small>{group.note}</small></div>
-        <span>{group.indexes.length}</span>
-      </div>
-      <div className="set-exercises">
-        {group.indexes.map((index, position) => {
-          const item = plan.exercises[index]
-          const exercise = resolve(item.exerciseId)
-          if (!exercise) return null
-          const isDragging = drag?.fromIndex === index
-          const isDropTarget = drag?.targetIndex === index && drag.fromIndex !== index
-          return <div
-            className={`plan-exercise ${isDragging ? 'dragging' : ''} ${isDropTarget ? 'drop-target' : ''}`}
-            key={`${group.key}_${item.exerciseId}_${index}`}
-            data-reorder-index={index}
-          >
-            <div className="exercise-order-row">
+
+    <nav className="routine-map" aria-label="Routine structure">
+      {groups.map((group, index) => <button key={group.key} className={group.key === activeGroup?.key ? 'active' : ''} aria-label={`${shortGroupLabel(group)}, ${group.indexes.length} exercises`} aria-pressed={group.key === activeGroup?.key} onClick={() => activateGroup(group.key)}>
+        <b>{index + 1}</b><span><strong>{shortGroupLabel(group)}</strong><small>{group.indexes.length} exercises</small></span>
+      </button>)}
+    </nav>
+
+    {activeGroup && <div className={`plan-workspace ${selectedExercise ? 'has-inspector' : ''}`}>
+      <section className={`plan-section routine-set ${activeGroup.key.startsWith('main-') ? 'main-set' : ''}`}>
+        <div className="section-heading">
+          <div><h2>{activeGroup.label.replace('Main circuit — ', '')}</h2><small>{activeGroup.note}</small></div>
+          <span className="drag-instruction">↕ Drag cards to reorder</span>
+        </div>
+        <div className="set-exercises" role="list" aria-label={activeGroup.label}>
+          {activeGroup.indexes.map((index, position) => {
+            const item = plan.exercises[index]
+            const exercise = resolve(item.exerciseId)
+            if (!exercise) return null
+            const isDragging = drag?.fromIndex === index
+            const isDropTarget = drag?.targetIndex === index && drag.fromIndex !== index
+            const fromPosition = drag ? activeGroup.indexes.indexOf(drag.fromIndex) : -1
+            const targetPosition = drag ? activeGroup.indexes.indexOf(drag.targetIndex) : -1
+            let transform = ''
+            if (isDragging && drag?.moved) transform = `translateY(${drag.offsetY}px) scale(.995)`
+            else if (drag?.moved && fromPosition < targetPosition && position > fromPosition && position <= targetPosition) transform = `translateY(-${drag.rowHeight}px)`
+            else if (drag?.moved && fromPosition > targetPosition && position >= targetPosition && position < fromPosition) transform = `translateY(${drag.rowHeight}px)`
+            return <div
+              className={`plan-exercise ${selectedIndex === index ? 'selected' : ''} ${isDragging && drag?.moved ? 'dragging' : ''} ${isDropTarget ? 'drop-target' : ''} ${item.scaled === 'up' ? 'scaled-up' : item.scaled === 'down' ? 'scaled-down' : ''}`}
+              key={`${activeGroup.key}_${item.exerciseId}_${index}`}
+              data-reorder-index={index}
+              role="listitem"
+              tabIndex={0}
+              aria-label={`${exercise.name}, ${item.prescription}. Drag to reorder or press Enter for details.`}
+              aria-roledescription="draggable exercise"
+              aria-grabbed={Boolean(isDragging && drag?.moved)}
+              onPointerDown={event => beginDrag(event, index)}
+              onKeyDown={event => keyboardRowAction(event, activeGroup, index)}
+              style={transform ? { transform } : undefined}
+            >
               <span className="exercise-position">{position + 1}</span>
-              <button
-                type="button"
-                className="drag-handle"
-                onPointerDown={event => beginDrag(event, index)}
-                onKeyDown={event => keyboardReorder(event, group, index)}
-                aria-label={`Drag ${exercise.name} to reorder. Use arrow keys for keyboard reordering.`}
-              ><span aria-hidden="true">⠿</span> Drag</button>
+              <span className="exercise-dot" aria-hidden="true"/>
+              <div className="plan-exercise-name"><strong>{exercise.name}</strong><span className="level-badge">L{exercise.level}</span>{item.scaled === 'up' && <span className="harder-badge">Harder</span>}{item.scaled === 'down' && <span className="easier-badge">Easier</span>}</div>
+              <span className="plan-dose">{item.prescription}</span>
+              <span className="plan-pattern">{pretty(exercise.pattern)}</span>
+              <span className="row-chevron" aria-hidden="true">›</span>
             </div>
-            <ExerciseCard exercise={exercise} planned={item}/>
-            <div className="exercise-adjustments" aria-label={`Adjust ${exercise.name}`}>
-              <button onClick={()=>onEasier(index)}>Easier</button>
-              <button onClick={()=>onHarder(index)}>Harder</button>
-              <button onClick={()=>onAdjust(index,-1)}>− reps/time</button>
-              <button onClick={()=>onAdjust(index,1)}>+ reps/time</button>
-              <button onClick={()=>onSwap(index)}>Swap all sets</button>
-              <button className="danger-text" onClick={()=>onRemove(index)}>Remove all sets</button>
-              <button className="danger-text" onClick={()=>onAvoid(index,item.exerciseId)}>Avoid & replace</button>
-            </div>
-          </div>
-        })}
-      </div>
-    </section>)}
-    <div className="sticky-actions"><button className="primary" onClick={onStart}>Start session <span>→</span></button><div><button className="secondary" onClick={onRegenerate}>Regenerate</button><button className="secondary" onClick={onSave}>Save</button></div></div>
+          })}
+        </div>
+      </section>
+
+      {selectedExercise && selectedEntry && selectedIndex !== null && <aside className="exercise-inspector" aria-label={`${selectedExercise.name} details`}>
+        <div className="sheet-grabber" aria-hidden="true"/>
+        <header>
+          <span className="inspector-icon">●</span>
+          <div><h2>{selectedExercise.name}</h2><p>{selectedEntry.prescription} · {pretty(selectedExercise.pattern)}</p></div>
+          <button className="inspector-close" onClick={closeInspector} aria-label="Close exercise details">×</button>
+        </header>
+        <div className="inspector-details">
+          <div><span className="inspector-symbol">?</span><p><strong>Why</strong><small>{selectedEntry.rationale}</small></p></div>
+          <div><span className="inspector-symbol">◌</span><p><strong>How</strong><small>{selectedExercise.description}</small></p></div>
+          <div><span className="inspector-symbol">▥</span><p><strong>Focus</strong><small>{[...selectedExercise.primaryMuscles, ...selectedExercise.secondaryMuscles].slice(0,4).map(pretty).join(', ')}</small></p></div>
+          <a href={exerciseVideoUrl(selectedExercise)} target="_blank" rel="noopener noreferrer"><span className="inspector-symbol">▶</span><p><strong>Watch video</strong><small>See movement demonstration</small></p><b>›</b></a>
+        </div>
+        <div className="inspector-actions" aria-label={`Adjust ${selectedExercise.name}`}>
+          <button className="easier" onClick={() => onEasier(selectedIndex)}>⌄ <span>Easier</span></button>
+          <button className="harder" onClick={() => onHarder(selectedIndex)}>⌃ <span>Harder</span></button>
+          <button onClick={() => onSwap(selectedIndex)}>↻ <span>Swap</span></button>
+          <button className="avoid" onClick={() => { onAvoid(selectedIndex, selectedEntry.exerciseId); closeInspector() }}>⊘ <span>Avoid</span></button>
+        </div>
+        <div className="inspector-secondary-actions">
+          <span>Adjust reps/time</span><button onClick={() => onAdjust(selectedIndex,-1)} aria-label={`Decrease reps or time for ${selectedExercise.name}`}>−</button><button onClick={() => onAdjust(selectedIndex,1)} aria-label={`Increase reps or time for ${selectedExercise.name}`}>+</button>
+          <button className="remove" onClick={() => { onRemove(selectedIndex); closeInspector() }}>Remove</button>
+        </div>
+      </aside>}
+    </div>}
+
+    <details className="algorithm-note"><summary><span>✦</span><strong>Why this session?</strong></summary><p>{plan.insights.join(' ')}</p></details>
+    <div className="plan-footer-actions"><button className="secondary" onClick={onRegenerate}>Regenerate</button><button className="secondary" onClick={onSave}>Save session</button></div>
   </div>
 }

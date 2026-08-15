@@ -1,6 +1,6 @@
 import { catalogueStats, exerciseById, exerciseVideoUrl } from '../data/exercises'
 import { defaultState } from '../storage/state'
-import { applySessionCompletion, createManualWorkout, generateWorkout, getExerciseDecision, removePlanExercise, scalePlanExercise } from './engine'
+import { applySessionCompletion, createManualWorkout, generateWorkout, getExerciseDecision, removePlanExercise, reorderPlanExercise, scalePlanExercise } from './engine'
 import type { BuilderPreferences, WorkoutSession } from './types'
 
 const preferences: BuilderPreferences = { intention:'train', goal:'strength', durationMinutes:30, focusAreas:['upper_body'], equipment:['none','wall','chair'], level:2, includeConditioning:false, includeWarmup:true, exercisesPerRound:'auto', targetSets:'auto', recoveryModes:['mobility','stretching'] }
@@ -56,6 +56,12 @@ describe('workout engine', () => {
     expect(harder.exercises[0].prescription).toContain('🩹')
   })
 
+  it('marks a selected easier variant for green highlighting',()=>{
+    const plan=createManualWorkout(['x002'],defaultState)
+    const easier=scalePlanExercise(plan,0,-1,defaultState)
+    expect(easier.exercises[0]).toMatchObject({exerciseId:'x001',scaled:'down'})
+  })
+
   it('includes exactly one meditation in every generated plan',()=>{
     const plan=generateWorkout({...preferences,durationMinutes:45},defaultState,'one-meditation')
     const meditations=plan.exercises.filter(item=>exerciseById.get(item.exerciseId)?.category==='mindfulness')
@@ -80,6 +86,13 @@ describe('workout engine', () => {
     const plan=createManualWorkout(['w1','x001'],defaultState)
     expect(removePlanExercise(plan,0).exercises.map(item=>item.exerciseId)).toEqual(['x001'])
     expect(defaultState.profile.avoidList).not.toContain('w1')
+  })
+
+  it('reorders movements within a section and protects section boundaries',()=>{
+    const plan=createManualWorkout(['x001','x002','u1','w1'],defaultState)
+    const reordered=reorderPlanExercise(plan,0,2)
+    expect(reordered.exercises.map(item=>item.exerciseId)).toEqual(['x002','u1','x001','w1'])
+    expect(reorderPlanExercise(plan,0,3)).toBe(plan)
   })
 
   it('restores three-success progression and brutal-session regression', () => {

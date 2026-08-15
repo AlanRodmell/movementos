@@ -1,6 +1,6 @@
 import { catalogueStats, exerciseById, exerciseVideoUrl } from '../data/exercises'
 import { defaultState } from '../storage/state'
-import { applySessionCompletion, createManualWorkout, generateWorkout, getExerciseDecision, removePlanExercise, reorderPlanExercise, scalePlanExercise } from './engine'
+import { applySessionCompletion, avoidPlanExercise, createManualWorkout, generateWorkout, getExerciseDecision, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
 import type { BuilderPreferences, WorkoutSession } from './types'
 
 const preferences: BuilderPreferences = { intention:'train', goal:'strength', durationMinutes:30, focusAreas:['upper_body'], equipment:['none','wall','chair'], level:2, includeConditioning:false, includeWarmup:true, exercisesPerRound:'auto', targetSets:'auto', recoveryModes:['mobility','stretching'] }
@@ -32,6 +32,16 @@ describe('workout engine', () => {
     expect(first).toEqual(second)
   })
 
+  it('regenerates a meaningfully different but still valid circuit',()=>{
+    const fullBody={...preferences,focusAreas:['full_body' as const],exercisesPerRound:5 as const,targetSets:2 as const}
+    const first=generateWorkout(fullBody,defaultState,'first-plan')
+    const firstMain=new Set(first.exercises.filter(item=>item.section==='Main work').map(item=>item.exerciseId))
+    const next=generateWorkout(fullBody,defaultState,'next-plan',firstMain)
+    const nextMain=new Set(next.exercises.filter(item=>item.section==='Main work').map(item=>item.exerciseId))
+    expect([...nextMain].filter(id=>firstMain.has(id)).length).toBeLessThan(firstMain.size)
+    expect(new Set([...nextMain].map(id=>programmingFamily(exerciseById.get(id)!)))).toEqual(new Set([...firstMain].map(id=>programmingFamily(exerciseById.get(id)!))))
+  })
+
   it('allows compatible custom exercises to participate in generation', () => {
     const custom = { id:'u_custom_test', name:'Custom press', description:'Test', category:'upper' as const, pattern:'custom_press', level:2 as const, durationSeconds:45, prescription:'10 reps', equipment:['none' as const], primaryMuscles:['chest' as const], secondaryMuscles:[], unilateral:false, lowImpact:true, goals:['strength' as const], contraindications:[], isCustom:true }
     const state = { ...defaultState, profile:{ ...defaultState.profile, favourites:[custom.id] }, customExercises:[custom] }
@@ -47,7 +57,7 @@ describe('workout engine', () => {
   })
 
   it('keeps recovery adjustments when a user selects a harder variant',()=>{
-    const state={...defaultState,dailyCheckIn:{date:new Date().toDateString(),tightAreas:['full_body' as const],primaryArea:'full_body' as const}}
+    const state={...defaultState,profile:{...defaultState.profile,equipment:['none' as const,'dumbbells' as const,'bench' as const]},dailyCheckIn:{date:new Date().toDateString(),tightAreas:['full_body' as const],primaryArea:'full_body' as const}}
     const plan=createManualWorkout(['x001'],state)
     const adjusted={...plan,exercises:plan.exercises.map(item=>({...item,adjusted:true,prescription:'5 reps 🩹',durationSeconds:25}))}
     const harder=scalePlanExercise(adjusted,0,1,state)
@@ -57,9 +67,19 @@ describe('workout engine', () => {
   })
 
   it('marks a selected easier variant for green highlighting',()=>{
-    const plan=createManualWorkout(['x002'],defaultState)
-    const easier=scalePlanExercise(plan,0,-1,defaultState)
+    const state={...defaultState,profile:{...defaultState.profile,equipment:['none' as const,'dumbbells' as const,'bench' as const]}}
+    const plan=createManualWorkout(['x002'],state)
+    const easier=scalePlanExercise(plan,0,-1,state)
     expect(easier.exercises[0]).toMatchObject({exerciseId:'x001',scaled:'down'})
+  })
+
+  it('marks harder variants red and clears the state at the original tier',()=>{
+    const state={...defaultState,profile:{...defaultState.profile,equipment:['none' as const,'dumbbells' as const,'bench' as const]}}
+    const plan=createManualWorkout(['x001'],state)
+    const harder=scalePlanExercise(plan,0,1,state)
+    expect(harder.exercises[0]).toMatchObject({exerciseId:'x002',scaled:'up',originalLevel:1})
+    const original=scalePlanExercise(harder,0,-1,state)
+    expect(original.exercises[0]).toMatchObject({exerciseId:'x001',scaled:null,originalLevel:1})
   })
 
   it('includes exactly one meditation in every generated plan',()=>{
@@ -74,6 +94,55 @@ describe('workout engine', () => {
     expect(plan.exercises.some(item=>item.section==='Prepare')).toBe(false)
     expect(main).toHaveLength(12)
     expect(new Set(main.map(item=>item.setNumber))).toEqual(new Set([1,2,3,4]))
+  })
+
+  it('guarantees balanced full-body movement coverage when the catalogue permits',()=>{
+    const fullBody={...preferences,focusAreas:['full_body' as const],exercisesPerRound:5 as const,targetSets:2 as const}
+    const plan=generateWorkout(fullBody,defaultState,'full-body-quality')
+    const firstSet=plan.exercises.filter(item=>item.section==='Main work'&&item.setNumber===1).map(item=>exerciseById.get(item.exerciseId)!)
+    const families=new Set(firstSet.map(programmingFamily))
+    expect(families).toContain('push')
+    expect(families).toContain('pull')
+    expect([...families].some(family=>family==='knee'||family==='lunge')).toBe(true)
+    expect(families).toContain('hinge')
+    expect([...families].some(family=>family.startsWith('core_')||family==='carry')).toBe(true)
+  })
+
+  it('uses one coherent circuit order across every generated set',()=>{
+    const plan=generateWorkout({...preferences,exercisesPerRound:4,targetSets:2},defaultState,'coherent-sets')
+    const setOneIndexes=plan.exercises.map((item,index)=>item.section==='Main work'&&item.setNumber===1?index:-1).filter(index=>index>=0)
+    const reordered=reorderPlanExercise(plan,setOneIndexes[0],setOneIndexes[2])
+    const idsFor=(setNumber:number)=>reordered.exercises.filter(item=>item.section==='Main work'&&item.setNumber===setNumber).map(item=>item.exerciseId)
+    expect(idsFor(1)).toEqual(idsFor(2))
+    expect(idsFor(1)).not.toEqual(plan.exercises.filter(item=>item.section==='Main work'&&item.setNumber===1).map(item=>item.exerciseId))
+  })
+
+  it('avoids and replaces every occurrence across all sets',()=>{
+    const plan=generateWorkout({...preferences,exercisesPerRound:4,targetSets:3},defaultState,'avoid-all-sets')
+    const index=plan.exercises.findIndex(item=>item.section==='Main work')
+    const avoidedId=plan.exercises[index].exerciseId
+    const state={...defaultState,profile:{...defaultState.profile,avoidList:[avoidedId]}}
+    const updated=avoidPlanExercise(plan,index,state)
+    expect(updated.exercises.some(item=>item.exerciseId===avoidedId)).toBe(false)
+    const setOrders=[1,2,3].map(setNumber=>updated.exercises.filter(item=>item.section==='Main work'&&item.setNumber===setNumber).map(item=>item.exerciseId))
+    expect(setOrders[1]).toEqual(setOrders[0])
+    expect(setOrders[2]).toEqual(setOrders[0])
+  })
+
+  it('keeps swaps within the equipment recorded on the plan',()=>{
+    const plan=generateWorkout({...preferences,exercisesPerRound:4,targetSets:2},defaultState,'equipment-safe-swap')
+    const index=plan.exercises.findIndex(item=>item.section==='Main work')
+    const swapped=swapPlanExercise(plan,index,defaultState)
+    expect(swapped.exercises.map(item=>exerciseById.get(item.exerciseId)!).every(exercise=>exercise.equipment.includes('none')||exercise.equipment.every(item=>plan.equipment?.includes(item)))).toBe(true)
+  })
+
+  it('changes prescriptions materially by training goal',()=>{
+    const strengthState={...defaultState,profile:{...defaultState.profile,goal:'strength' as const,equipment:['none' as const,'dumbbells' as const]}}
+    const enduranceState={...strengthState,profile:{...strengthState.profile,goal:'endurance' as const}}
+    const strength=createManualWorkout(['x001'],strengthState)
+    const endurance=createManualWorkout(['x001'],enduranceState)
+    expect(strength.exercises[0].prescription).not.toBe(endurance.exercises[0].prescription)
+    expect(strength.exercises[0].durationSeconds).toBeLessThan(endurance.exercises[0].durationSeconds)
   })
 
   it('separates stretching from mobility and restores video search links',()=>{

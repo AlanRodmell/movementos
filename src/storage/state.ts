@@ -119,6 +119,8 @@ function planFromUnknown(value: unknown, fallbackId = 'plan_import'): WorkoutPla
   return {
     id: safeText(raw.id, fallbackId, 100), name: safeText(raw.name, 'Saved workout', 120), intention: raw.intention === 'recover' || raw.intention === 'recovery' ? 'recover' : 'train',
     goal: goals.includes(raw.goal as Goal) ? raw.goal as Goal : 'general', durationMinutes: Math.max(1, Number(raw.durationMinutes) || Math.round(exercises.reduce((sum,item) => sum + item.durationSeconds, 0) / 60)),
+    targetDurationMinutes: Math.max(1, Number(raw.targetDurationMinutes) || Number(raw.durationMinutes) || Math.round(exercises.reduce((sum,item) => sum + item.durationSeconds, 0) / 60)),
+    equipment: Array.isArray(raw.equipment) ? raw.equipment.filter(item => equipment.includes(item as Equipment)) as Equipment[] : undefined,
     createdAt: Number.isFinite(Date.parse(String(raw.createdAt))) ? new Date(String(raw.createdAt)).toISOString() : new Date(0).toISOString(), exercises,
     insights: Array.isArray(raw.insights) ? raw.insights.map(value => safeText(value, '', 200)).filter(Boolean).slice(0, 10) : ['Restored from your saved workout library.'],
     focusAreas: Array.isArray(raw.focusAreas) ? raw.focusAreas.map(value => safeArea(value)).slice(0, 20) : [],
@@ -185,7 +187,7 @@ export function serializeLegacyState(state: AppState) {
     rotation:state.rotation, history:state.legacyHistory,
     workoutHistory: state.history.map(session => ({ id:session.id, date:session.date, name:session.planName, durationSeconds:session.durationSeconds, plannedExercises:session.exercises.length, completedExercises:session.completedExerciseIds.length, rating:session.rating, focus:session.focus, intention:session.intention === 'recover' ? 'recovery' : 'workout', goal:session.goal, completedExerciseIds:session.completedExerciseIds, exercises:session.exercises.map(exercise => ({ id:exercise.id, name:exercise.name, family:null, reps:exercise.prescription, detail:'', secs:exercise.durationSeconds })) , areaLoadBefore:session.areaLoadBefore })),
     exerciseStats:state.exerciseStats, recovery:state.recovery,
-    savedWorkouts: state.savedPlans.map(plan => ({ id:plan.id, name:plan.name, groups:legacyGroups(plan), intention:plan.intention, goal:plan.goal, durationMinutes:plan.durationMinutes, createdAt:plan.createdAt, insights:plan.insights, focusAreas:plan.focusAreas })),
+    savedWorkouts: state.savedPlans.map(plan => ({ id:plan.id, name:plan.name, groups:legacyGroups(plan), intention:plan.intention, goal:plan.goal, durationMinutes:plan.durationMinutes, targetDurationMinutes:plan.targetDurationMinutes, equipment:plan.equipment, createdAt:plan.createdAt, insights:plan.insights, focusAreas:plan.focusAreas })),
     customExercises, issues:state.issues, activeSession:state.activeSession,
   }
 }

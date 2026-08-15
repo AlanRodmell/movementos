@@ -97,6 +97,8 @@ export interface WorkoutPlan {
   intention: Intention
   goal: Goal
   durationMinutes: number
+  targetDurationMinutes?: number
+  equipment?: Equipment[]
   createdAt: string
   exercises: WorkoutExercise[]
   insights: string[]

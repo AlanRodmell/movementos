@@ -3,7 +3,7 @@ import { generateWorkout } from '../domain/engine'
 import { defaultState } from '../storage/state'
 import { PlanScreen } from './PlanScreen'
 
-it('renders distinct sets and offers pointer and keyboard reordering without move buttons', () => {
+it('uses set navigation, whole-row dragging and an exercise inspector without move controls', () => {
   const plan = generateWorkout({
     intention:'train', goal:'strength', durationMinutes:30, focusAreas:['full_body'], equipment:defaultState.profile.equipment,
     level:2, includeConditioning:false, includeWarmup:false, exercisesPerRound:4, targetSets:2, recoveryModes:['mobility','stretching'],
@@ -25,21 +25,26 @@ it('renders distinct sets and offers pointer and keyboard reordering without mov
     onAvoid={noop}
   />)
 
-  const setOne = screen.getByRole('heading', { name:'Main circuit — Set 1 of 2' }).closest('section')!
-  expect(screen.getByRole('heading', { name:'Main circuit — Set 2 of 2' })).toBeInTheDocument()
+  const setOne = screen.getByRole('heading', { name:'Set 1 of 2' }).closest('section')!
+  expect(screen.queryByRole('heading', { name:'Set 2 of 2' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name:'Set 2, 4 exercises' }))
+  expect(screen.getByRole('heading', { name:'Set 2 of 2' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name:'Set 1, 4 exercises' }))
   expect(screen.queryByRole('button', { name:/move .* up/i })).not.toBeInTheDocument()
-  const handles = within(setOne).getAllByRole('button', { name:/drag .* to reorder/i })
-  fireEvent.keyDown(handles[0], { key:'ArrowDown' })
+  expect(screen.queryByRole('button', { name:/drag .* to reorder/i })).not.toBeInTheDocument()
+  const rows = within(setOne).getAllByRole('listitem')
+  fireEvent.keyDown(rows[0], { key:'ArrowDown' })
   const firstSetIndexes = plan.exercises.map((item,index)=>item.section==='Main work'&&item.setNumber===1?index:-1).filter(index=>index>=0)
   expect(onReorder).toHaveBeenCalledWith(firstSetIndexes[0], firstSetIndexes[1])
 
   onReorder.mockClear()
-  const targetRow = handles[1].closest<HTMLElement>('[data-reorder-index]')!
-  const originalElementFromPoint = document.elementFromPoint
-  document.elementFromPoint = vi.fn(() => targetRow)
-  fireEvent.pointerDown(handles[0], { pointerId:7, button:0, clientX:10, clientY:10 })
-  fireEvent.pointerMove(window, { pointerId:7, clientX:10, clientY:30 })
-  fireEvent.pointerUp(window, { pointerId:7, clientX:10, clientY:30 })
+  fireEvent.pointerDown(rows[0], { pointerId:7, button:0, clientX:10, clientY:10 })
+  fireEvent.pointerMove(window, { pointerId:7, clientX:10, clientY:18 })
+  fireEvent.pointerUp(window, { pointerId:7, clientX:10, clientY:18 })
   expect(onReorder).toHaveBeenCalledWith(firstSetIndexes[0], firstSetIndexes[1])
-  document.elementFromPoint = originalElementFromPoint
+
+  fireEvent.keyDown(rows[0], { key:'Enter' })
+  const inspector = screen.getByRole('complementary', { name:/details$/i })
+  expect(inspector).toHaveTextContent(/Why/i)
+  expect(inspector).toHaveTextContent(/Easier/i)
 })

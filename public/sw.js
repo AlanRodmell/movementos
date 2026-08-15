@@ -1,4 +1,4 @@
-const CACHE = 'movement-os-v6'
+const CACHE = 'movement-os-v7'
 const CORE = ['./', './manifest.webmanifest', './icon.svg']
 
 self.addEventListener('install', event => {

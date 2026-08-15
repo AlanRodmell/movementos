@@ -1,6 +1,6 @@
 import { catalogueStats, exerciseById, exerciseVideoUrl } from '../data/exercises'
 import { defaultState } from '../storage/state'
-import { applySessionCompletion, avoidPlanExercise, createManualWorkout, generateWorkout, getExerciseDecision, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
+import { addPlanExercise, applySessionCompletion, avoidPlanExercise, createManualWorkout, generateWorkout, getExerciseDecision, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
 import type { BuilderPreferences, WorkoutSession } from './types'
 
 const preferences: BuilderPreferences = { intention:'train', goal:'strength', durationMinutes:30, focusAreas:['upper_body'], equipment:['none','wall','chair'], level:2, includeConditioning:false, includeWarmup:true, exercisesPerRound:'auto', targetSets:'auto', recoveryModes:['mobility','stretching'] }
@@ -155,6 +155,17 @@ describe('workout engine', () => {
     const plan=createManualWorkout(['w1','x001'],defaultState)
     expect(removePlanExercise(plan,0).exercises.map(item=>item.exerciseId)).toEqual(['x001'])
     expect(defaultState.profile.avoidList).not.toContain('w1')
+  })
+
+  it('adds a movement to every set of a generated main circuit',()=>{
+    const plan=generateWorkout({...preferences,exercisesPerRound:3,targetSets:2},defaultState,'add-to-plan')
+    const firstMainIndex=plan.exercises.findIndex(item=>item.section==='Main work'&&item.setNumber===1)
+    const candidate=[...exerciseById.values()].find(exercise=>!plan.exercises.some(item=>item.exerciseId===exercise.id))!
+    const added=addPlanExercise(plan,firstMainIndex,candidate.id,defaultState)
+    expect(added.exercises.filter(item=>item.exerciseId===candidate.id)).toHaveLength(2)
+    expect(added.exercises.filter(item=>item.section==='Main work'&&item.setNumber===1).at(-1)?.exerciseId).toBe(candidate.id)
+    expect(added.exercises.filter(item=>item.section==='Main work'&&item.setNumber===2).at(-1)?.exerciseId).toBe(candidate.id)
+    expect(added.durationMinutes).toBeGreaterThan(plan.durationMinutes)
   })
 
   it('reorders movements within a section and protects section boundaries',()=>{

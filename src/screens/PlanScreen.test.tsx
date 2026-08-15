@@ -9,6 +9,7 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
     level:2, includeConditioning:false, includeWarmup:false, exercisesPerRound:4, targetSets:2, recoveryModes:['mobility','stretching'],
   }, defaultState, 'plan-screen')
   const onReorder = vi.fn()
+  const onAdd = vi.fn()
   const noop = vi.fn()
   render(<PlanScreen
     plan={plan}
@@ -21,6 +22,7 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
     onAdjust={noop}
     onSwap={noop}
     onReorder={onReorder}
+    onAdd={onAdd}
     onRemove={noop}
     onAvoid={noop}
   />)
@@ -47,4 +49,11 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
   const inspector = screen.getByRole('complementary', { name:/details$/i })
   expect(inspector).toHaveTextContent(/Why/i)
   expect(inspector).toHaveTextContent(/Easier/i)
+
+  fireEvent.click(screen.getByRole('button', { name:'Close exercise details' }))
+  fireEvent.click(screen.getByRole('button', { name:'+ Add exercise' }))
+  expect(screen.getByRole('region', { name:/Add exercise to Main circuit/i })).toHaveTextContent('every main set')
+  fireEvent.change(screen.getByRole('searchbox', { name:'Search exercises to add' }), { target:{ value:'Dumbbell Floor Press' } })
+  fireEvent.click(screen.getByRole('button', { name:/Dumbbell Floor Press/i }))
+  expect(onAdd).toHaveBeenCalledWith(firstSetIndexes[firstSetIndexes.length - 1], 'x001')
 })

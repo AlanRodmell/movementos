@@ -591,6 +591,38 @@ export function removePlanExercise(plan: WorkoutPlan, index: number) {
   return { ...plan, exercises, durationMinutes: estimatedPlanMinutes(exercises) }
 }
 
+export function addPlanExercise(plan: WorkoutPlan, groupIndex: number, exerciseId: string, state: AppState) {
+  const target = plan.exercises[groupIndex]
+  const exercise = resolveExercise(exerciseId, state)
+  if (!target || !exercise) return plan
+
+  const isRepeatedCircuit = target.section === 'Main work' && target.setNumber !== undefined
+  const alreadyInGroup = plan.exercises.some(item => item.exerciseId === exerciseId
+    && item.section === target.section
+    && (isRepeatedCircuit || (item.setNumber ?? 0) === (target.setNumber ?? 0)))
+  if (alreadyInGroup) return plan
+
+  const preferences = compatiblePreferences(plan, state)
+  const addedItem = (template: WorkoutExercise) => ({
+    ...planItem(exercise, template.section, preferences, state, template.setNumber, template.totalSets, 'Manually added'),
+    rationale: 'Added manually while reviewing this session.',
+  })
+  const exercises: WorkoutExercise[] = []
+
+  plan.exercises.forEach((item, index) => {
+    exercises.push(item)
+    const next = plan.exercises[index + 1]
+    const isInsertionPoint = isRepeatedCircuit
+      ? item.section === 'Main work' && item.setNumber !== undefined && (next?.section !== 'Main work' || next.setNumber !== item.setNumber)
+      : item.section === target.section
+        && (item.setNumber ?? 0) === (target.setNumber ?? 0)
+        && (next?.section !== item.section || (next.setNumber ?? 0) !== (item.setNumber ?? 0))
+    if (isInsertionPoint) exercises.push(addedItem(item))
+  })
+
+  return { ...plan, exercises, durationMinutes: estimatedPlanMinutes(exercises) }
+}
+
 function sameReorderGroup(a: WorkoutExercise, b: WorkoutExercise) {
   return a.section === b.section && (a.setNumber ?? 0) === (b.setNumber ?? 0)
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { exerciseById, exerciseVideoUrl } from '../data/exercises'
+import { exerciseById, exercises, exerciseVideoUrl } from '../data/exercises'
 import type { Exercise, WorkoutExercise, WorkoutPlan } from '../domain/types'
 
 interface PlanGroup {
@@ -57,11 +57,13 @@ function pretty(value: string) {
   return value.replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase())
 }
 
-export function PlanScreen({ plan, customExercises, onStart, onSave, onRegenerate, onEasier, onHarder, onAdjust, onSwap, onReorder, onRemove, onAvoid }: { plan: WorkoutPlan; customExercises: Exercise[]; onStart: () => void; onSave: () => void; onRegenerate: () => void; onEasier:(index:number)=>void; onHarder:(index:number)=>void; onAdjust:(index:number,direction:-1|1)=>void; onSwap:(index:number)=>void; onReorder:(fromIndex:number,toIndex:number)=>void; onRemove:(index:number)=>void; onAvoid:(index:number,id:string)=>void }) {
+export function PlanScreen({ plan, customExercises, onStart, onSave, onRegenerate, onEasier, onHarder, onAdjust, onSwap, onReorder, onAdd, onRemove, onAvoid }: { plan: WorkoutPlan; customExercises: Exercise[]; onStart: () => void; onSave: () => void; onRegenerate: () => void; onEasier:(index:number)=>void; onHarder:(index:number)=>void; onAdjust:(index:number,direction:-1|1)=>void; onSwap:(index:number)=>void; onReorder:(fromIndex:number,toIndex:number)=>void; onAdd:(groupIndex:number,exerciseId:string)=>void; onRemove:(index:number)=>void; onAvoid:(index:number,id:string)=>void }) {
   const groups = planGroups(plan)
   const firstMainGroup = groups.find(group => group.key.startsWith('main-'))?.key ?? groups[0]?.key ?? ''
   const [activeGroupKey, setActiveGroupKey] = useState(firstMainGroup)
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+  const [addingToGroupKey, setAddingToGroupKey] = useState<string | null>(null)
+  const [exerciseSearch, setExerciseSearch] = useState('')
   const [drag, setDrag] = useState<DragState | null>(null)
   const dragRef = useRef<DragState | null>(null)
   const groupSignature = groups.map(group => group.key).join('|')
@@ -69,6 +71,11 @@ export function PlanScreen({ plan, customExercises, onStart, onSave, onRegenerat
   const activeGroup = groups.find(group => group.key === activeGroupKey) ?? groups[0]
   const selectedEntry = selectedIndex === null ? null : plan.exercises[selectedIndex]
   const selectedExercise = selectedEntry ? resolve(selectedEntry.exerciseId) : null
+  const activeExerciseIds = new Set(activeGroup?.indexes.map(index => plan.exercises[index].exerciseId) ?? [])
+  const normalizedSearch = exerciseSearch.trim().toLowerCase()
+  const addCandidates = [...exercises, ...customExercises].filter(exercise => !activeExerciseIds.has(exercise.id)
+    && (!normalizedSearch || `${exercise.name} ${exercise.pattern} ${exercise.primaryMuscles.join(' ')}`.toLowerCase().includes(normalizedSearch)))
+    .slice(0, 10)
 
   useEffect(() => {
     if (!groups.some(group => group.key === activeGroupKey)) setActiveGroupKey(firstMainGroup)
@@ -158,6 +165,14 @@ export function PlanScreen({ plan, customExercises, onStart, onSave, onRegenerat
   const activateGroup = (key: string) => {
     setActiveGroupKey(key)
     setSelectedIndex(null)
+    setAddingToGroupKey(null)
+    setExerciseSearch('')
+  }
+
+  const toggleAddExercise = () => {
+    setAddingToGroupKey(current => current === activeGroup?.key ? null : activeGroup?.key ?? null)
+    setExerciseSearch('')
+    setSelectedIndex(null)
   }
 
   const closeInspector = () => setSelectedIndex(null)
@@ -180,8 +195,14 @@ export function PlanScreen({ plan, customExercises, onStart, onSave, onRegenerat
       <section className={`plan-section routine-set ${activeGroup.key.startsWith('main-') ? 'main-set' : ''}`}>
         <div className="section-heading">
           <div><h2>{activeGroup.label.replace('Main circuit — ', '')}</h2><small>{activeGroup.note}</small></div>
-          <span className="drag-instruction">↕ Drag cards to reorder</span>
+          <div className="plan-heading-actions"><span className="drag-instruction">↕ Drag cards to reorder</span><button className="add-exercise-button" onClick={toggleAddExercise} aria-expanded={addingToGroupKey === activeGroup.key}>+ Add exercise</button></div>
         </div>
+        {addingToGroupKey === activeGroup.key && <section className="exercise-picker" aria-label={`Add exercise to ${activeGroup.label}`}>
+          <header><div><strong>Add an exercise</strong><small>{activeGroup.key.startsWith('main-') ? 'It will be added to every main set.' : `It will be added to ${activeGroup.label}.`}</small></div><button onClick={toggleAddExercise} aria-label="Close exercise picker">×</button></header>
+          <input autoFocus type="search" value={exerciseSearch} onChange={event => setExerciseSearch(event.target.value)} placeholder="Search by exercise, muscle, or pattern…" aria-label="Search exercises to add"/>
+          <div className="exercise-picker-results">{addCandidates.map(exercise => <button key={exercise.id} onClick={() => { onAdd(activeGroup.indexes[activeGroup.indexes.length - 1], exercise.id); setAddingToGroupKey(null); setExerciseSearch('') }}><span><strong>{exercise.name}</strong><small>{pretty(exercise.pattern)} · Level {exercise.level}</small></span><b>Add</b></button>)}</div>
+          {!addCandidates.length && <p>No matching exercises available for this section.</p>}
+        </section>}
         <div className="set-exercises" role="list" aria-label={activeGroup.label}>
           {activeGroup.indexes.map((index, position) => {
             const item = plan.exercises[index]

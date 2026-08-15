@@ -17,7 +17,7 @@ export const defaultState: AppState = {
 }
 
 const goals: Goal[] = ['general','strength','muscle','endurance','mobility']
-const categories: Category[] = ['warmup','upper','lower','core','conditioning','mobility','mindfulness']
+const categories: Category[] = ['warmup','upper','lower','core','conditioning','mobility','stretching','mindfulness']
 const equipment: Equipment[] = ['none','wall','chair','bench','table','bar','bands','dumbbells','kettlebell','barbell','cable','machine','slider','box','rope']
 const areas: MuscleArea[] = ['full_body','upper_body','lower_body','chest','upper_back','lower_back','shoulders','anterior_shoulder','posterior_shoulder','biceps','triceps','core','deep_core','rectus_abdominis','obliques','hips','hip_flexors','glutes','quads','hamstrings','adductors','calves','legs','neck','mind']
 const safeText = (value: unknown, fallback = '', max = 500) => typeof value === 'string' ? value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').slice(0, max) : fallback
@@ -95,7 +95,7 @@ function migrateCustomExercises(raw: Record<string, unknown>): Exercise[] {
       durationSeconds: Math.max(1, Math.min(3600, Number(exercise.durationSeconds ?? exercise.secs) || 30)), prescription: safeText(exercise.prescription ?? exercise.reps, '10 reps', 80),
       equipment: rawEquipment.length ? rawEquipment : ['none'], primaryMuscles: rawPrimary, secondaryMuscles: [], unilateral: Boolean(exercise.unilateral),
       lowImpact: exercise.lowImpact !== false, goals: Array.isArray(exercise.goals) ? exercise.goals.filter(value => goals.includes(value as Goal)) as Goal[] : ['general'],
-      contraindications: Array.isArray(exercise.contraindications) ? exercise.contraindications.map(value => safeArea(value)).slice(0, 10) : [], isCustom: true,
+      contraindications: Array.isArray(exercise.contraindications) ? exercise.contraindications.map(value => safeArea(value)).slice(0, 10) : [], videoUrl:safeText(exercise.videoUrl,'',1000), isCustom: true,
     } satisfies Exercise
   }).slice(0, 250)
 }
@@ -112,7 +112,8 @@ function planFromUnknown(value: unknown, fallbackId = 'plan_import'): WorkoutPla
     const entry = item as Record<string, unknown>
     const heading = safeText(entry.section, 'Main work', 30)
     const section: WorkoutExercise['section'] = heading === 'Prepare' || heading === 'Condition' || heading === 'Restore' ? heading : 'Main work'
-    return { exerciseId: safeText(entry.exerciseId ?? entry.id, '', 100), prescription: safeText(entry.prescription ?? entry.reps, '', 80), durationSeconds: Math.max(1, Math.min(3600, Number(entry.durationSeconds ?? entry.secs) || 30)), rationale: safeText(entry.rationale, 'Saved exercise', 200), section }
+    const scaled:WorkoutExercise['scaled']=entry.scaled==='up'||entry.scaled==='down'?entry.scaled:null
+    return { exerciseId: safeText(entry.exerciseId ?? entry.id, '', 100), prescription: safeText(entry.prescription ?? entry.reps, '', 80), durationSeconds: Math.max(1, Math.min(3600, Number(entry.durationSeconds ?? entry.secs) || 30)), rationale: safeText(entry.rationale, 'Saved exercise', 200), section, adjusted:Boolean(entry.adjusted), scaled, originalLevel:Number(entry.originalLevel??entry.originalTier)||0, setNumber:Number(entry.setNumber)||undefined, totalSets:Number(entry.totalSets)||undefined }
   }).filter(item => item.exerciseId)
   if (!exercises.length) return null
   return {
@@ -168,14 +169,14 @@ export function normaliseState(value: unknown): AppState {
 function legacyGroups(plan: WorkoutPlan) {
   return ['Prepare','Main work','Condition','Restore'].map(heading => ({
     heading,
-    items: plan.exercises.filter(item => item.section === heading).map((item,index) => ({ id:item.exerciseId, reps:item.prescription, secs:item.durationSeconds, adjusted:false, scaled:null, originalTier:0, ukey:`${item.exerciseId}_${index}` })),
+    items: plan.exercises.filter(item => item.section === heading).map((item,index) => ({ id:item.exerciseId, reps:item.prescription, secs:item.durationSeconds, adjusted:Boolean(item.adjusted), scaled:item.scaled??null, originalTier:item.originalLevel??0, setNumber:item.setNumber, totalSets:item.totalSets, ukey:`${item.exerciseId}_${index}` })),
   })).filter(group => group.items.length)
 }
 
 export function serializeLegacyState(state: AppState) {
   const customExercises = Object.fromEntries(state.customExercises.map(exercise => [exercise.id, {
     name: exercise.name, reps: exercise.prescription, secs: exercise.durationSeconds, detail: exercise.description, bp: [...exercise.primaryMuscles, ...exercise.secondaryMuscles],
-    tier: exercise.level, family: exercise.pattern, isCustom: true, customBodyArea: exercise.primaryMuscles[0] ?? 'full_body', videoUrl: '',
+    tier: exercise.level, family: exercise.pattern, isCustom: true, customBodyArea: exercise.primaryMuscles[0] ?? 'full_body', videoUrl: exercise.videoUrl ?? '',
     category: exercise.category, equipment: exercise.equipment, primaryMuscles: exercise.primaryMuscles, unilateral: exercise.unilateral, lowImpact: exercise.lowImpact, goals: exercise.goals, contraindications: exercise.contraindications,
   }]))
   return {

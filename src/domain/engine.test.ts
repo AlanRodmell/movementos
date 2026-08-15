@@ -1,9 +1,9 @@
-import { catalogueStats, exerciseById } from '../data/exercises'
+import { catalogueStats, exerciseById, exerciseVideoUrl } from '../data/exercises'
 import { defaultState } from '../storage/state'
-import { applySessionCompletion, createManualWorkout, generateWorkout, getExerciseDecision } from './engine'
+import { applySessionCompletion, createManualWorkout, generateWorkout, getExerciseDecision, removePlanExercise, scalePlanExercise } from './engine'
 import type { BuilderPreferences, WorkoutSession } from './types'
 
-const preferences: BuilderPreferences = { intention:'train', goal:'strength', durationMinutes:30, focusAreas:['upper_body'], equipment:['none','wall','chair'], level:2, includeConditioning:false }
+const preferences: BuilderPreferences = { intention:'train', goal:'strength', durationMinutes:30, focusAreas:['upper_body'], equipment:['none','wall','chair'], level:2, includeConditioning:false, includeWarmup:true, exercisesPerRound:'auto', targetSets:'auto', recoveryModes:['mobility','stretching'] }
 
 describe('workout engine', () => {
   it('substantially expands and preserves the catalogue', () => {
@@ -44,6 +44,42 @@ describe('workout engine', () => {
     const plan=generateWorkout(preferences,state,'check-in')
     expect(plan.exercises.every(item=>item.adjusted)).toBe(true)
     expect(plan.insights.join(' ')).toContain('adjusted')
+  })
+
+  it('keeps recovery adjustments when a user selects a harder variant',()=>{
+    const state={...defaultState,dailyCheckIn:{date:new Date().toDateString(),tightAreas:['full_body' as const],primaryArea:'full_body' as const}}
+    const plan=createManualWorkout(['x001'],state)
+    const adjusted={...plan,exercises:plan.exercises.map(item=>({...item,adjusted:true,prescription:'5 reps 🩹',durationSeconds:25}))}
+    const harder=scalePlanExercise(adjusted,0,1,state)
+    expect(harder.exercises[0].exerciseId).toBe('x002')
+    expect(harder.exercises[0].adjusted).toBe(true)
+    expect(harder.exercises[0].prescription).toContain('🩹')
+  })
+
+  it('includes exactly one meditation in every generated plan',()=>{
+    const plan=generateWorkout({...preferences,durationMinutes:45},defaultState,'one-meditation')
+    const meditations=plan.exercises.filter(item=>exerciseById.get(item.exerciseId)?.category==='mindfulness')
+    expect(meditations).toHaveLength(1)
+  })
+
+  it('honours exercises per round, target sets and optional warm-up',()=>{
+    const plan=generateWorkout({...preferences,includeWarmup:false,exercisesPerRound:3,targetSets:4},defaultState,'custom-structure')
+    const main=plan.exercises.filter(item=>item.section==='Main work')
+    expect(plan.exercises.some(item=>item.section==='Prepare')).toBe(false)
+    expect(main).toHaveLength(12)
+    expect(new Set(main.map(item=>item.setNumber))).toEqual(new Set([1,2,3,4]))
+  })
+
+  it('separates stretching from mobility and restores video search links',()=>{
+    expect(exerciseById.get('m5')?.category).toBe('stretching')
+    expect(exerciseById.get('x063')?.category).toBe('mobility')
+    expect(exerciseVideoUrl(exerciseById.get('u1')!)).toContain('youtube.com/results')
+  })
+
+  it('removes a movement from a reviewed plan without avoiding it',()=>{
+    const plan=createManualWorkout(['w1','x001'],defaultState)
+    expect(removePlanExercise(plan,0).exercises.map(item=>item.exerciseId)).toEqual(['x001'])
+    expect(defaultState.profile.avoidList).not.toContain('w1')
   })
 
   it('restores three-success progression and brutal-session regression', () => {

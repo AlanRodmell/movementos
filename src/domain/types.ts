@@ -18,7 +18,8 @@ export type Equipment =
   | 'box'
   | 'rope'
 
-export type Category = 'warmup' | 'upper' | 'lower' | 'core' | 'conditioning' | 'mobility' | 'mindfulness'
+export type Category = 'warmup' | 'upper' | 'lower' | 'core' | 'conditioning' | 'mobility' | 'stretching' | 'mindfulness'
+export type RecoveryMode = 'mobility' | 'stretching'
 export type MuscleArea =
   | 'full_body' | 'upper_body' | 'lower_body' | 'chest' | 'upper_back' | 'lower_back'
   | 'shoulders' | 'anterior_shoulder' | 'posterior_shoulder' | 'biceps' | 'triceps'
@@ -43,6 +44,7 @@ export interface Exercise {
   contraindications: MuscleArea[]
   optIn?: 'advancedBridges'
   isCustom?: boolean
+  videoUrl?: string
 }
 
 export interface Issue {
@@ -85,6 +87,8 @@ export interface WorkoutExercise {
   adjusted?: boolean
   scaled?: 'up' | 'down' | null
   originalLevel?: number
+  setNumber?: number
+  totalSets?: number
 }
 
 export interface WorkoutPlan {
@@ -146,11 +150,15 @@ export interface ActiveSession {
 export interface BuilderPreferences {
   intention: Intention
   goal: Goal
-  durationMinutes: number
+  durationMinutes: number | 'auto'
   focusAreas: MuscleArea[]
   equipment: Equipment[]
   level: Level
   includeConditioning: boolean
+  includeWarmup: boolean
+  exercisesPerRound: number | 'auto'
+  targetSets: number | 'auto'
+  recoveryModes: RecoveryMode[]
 }
 
 export interface AppState {

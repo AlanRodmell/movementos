@@ -89,7 +89,7 @@ const rows: Row[] = [
 
 const defaultGoals: Record<Category, Goal[]> = {
   warmup: ['general'], upper: ['strength','muscle','general'], lower: ['strength','muscle','general'],
-  core: ['strength','general'], conditioning: ['endurance','general'], mobility: ['mobility','general'], mindfulness: ['mobility','general'],
+  core: ['strength','general'], conditioning: ['endurance','general'], mobility: ['mobility','general'], stretching: ['mobility','general'], mindfulness: ['mobility','general'],
 }
 
 export const expandedExercises: Exercise[] = rows.map(([id,name,category,pattern,equipment,primaryMuscles,level,prescription,durationSeconds,description,goals,lowImpact]) => ({

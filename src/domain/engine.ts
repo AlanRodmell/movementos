@@ -140,6 +140,14 @@ export function findTierVariant(id:string,direction:-1|1,state:AppState) { const
 export function scalePlanExercise(plan:WorkoutPlan,index:number,direction:-1|1,state:AppState) { const item=plan.exercises[index];const variant=findTierVariant(item.exerciseId,direction,state);if(!variant)return plan;const adjustment=adjustedPrescription(variant,plan.intention,state);const exercises=plan.exercises.map((entry,itemIndex)=>itemIndex===index?{...entry,exerciseId:variant.id,...adjustment,scaled:direction>0?'up' as const:'down' as const,rationale:`${direction>0?'Manually progressed to a harder family variant.':'Manually regressed to an easier family variant.'}${adjustment.adjusted?' Recovery adjustment retained.':''}`}:entry);return {...plan,exercises} }
 export function adjustPlanPrescription(plan:WorkoutPlan,index:number,direction:-1|1) { const exercises=plan.exercises.map((entry,itemIndex)=>{if(itemIndex!==index)return entry;const timed=/sec|min/i.test(entry.prescription);const step=timed?5:1;const prescription=entry.prescription.replace(/\d+/g,value=>String(Math.max(1,Number(value)+direction*step)));return {...entry,prescription,durationSeconds:timed?Math.max(5,entry.durationSeconds+direction*5):entry.durationSeconds}});return {...plan,exercises} }
 export function removePlanExercise(plan:WorkoutPlan,index:number) { return {...plan,exercises:plan.exercises.filter((_,itemIndex)=>itemIndex!==index)} }
+export function reorderPlanExercise(plan:WorkoutPlan,fromIndex:number,toIndex:number) {
+  if (fromIndex===toIndex || fromIndex<0 || toIndex<0 || fromIndex>=plan.exercises.length || toIndex>=plan.exercises.length) return plan
+  if (plan.exercises[fromIndex].section!==plan.exercises[toIndex].section) return plan
+  const exercises=[...plan.exercises]
+  const [moved]=exercises.splice(fromIndex,1)
+  exercises.splice(toIndex,0,moved)
+  return {...plan,exercises}
+}
 
 export function swapPlanExercise(plan:WorkoutPlan,index:number,state:AppState) {
   const current=plan.exercises[index]; const exercise=resolveExercise(current.exerciseId,state); if(!exercise)return plan

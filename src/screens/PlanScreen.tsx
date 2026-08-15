@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { exerciseById } from '../data/exercises'
 import type { Exercise, WorkoutExercise, WorkoutPlan } from '../domain/types'
 import { ExerciseCard } from '../components/ExerciseCard'
@@ -8,6 +8,12 @@ interface PlanGroup {
   label: string
   note: string
   indexes: number[]
+}
+
+interface DragState {
+  fromIndex: number
+  targetIndex: number
+  pointerId: number
 }
 
 function groupKey(item: WorkoutExercise) {
@@ -39,7 +45,8 @@ function planGroups(plan: WorkoutPlan): PlanGroup[] {
 }
 
 export function PlanScreen({ plan, customExercises, onStart, onSave, onRegenerate, onEasier, onHarder, onAdjust, onSwap, onReorder, onRemove, onAvoid }: { plan: WorkoutPlan; customExercises: Exercise[]; onStart: () => void; onSave: () => void; onRegenerate: () => void; onEasier:(index:number)=>void; onHarder:(index:number)=>void; onAdjust:(index:number,direction:-1|1)=>void; onSwap:(index:number)=>void; onReorder:(fromIndex:number,toIndex:number)=>void; onRemove:(index:number)=>void; onAvoid:(index:number,id:string)=>void }) {
-  const [drag, setDrag] = useState<{ fromIndex:number; targetIndex:number; pointerId:number } | null>(null)
+  const [drag, setDrag] = useState<DragState | null>(null)
+  const dragRef = useRef<DragState | null>(null)
   const resolve = (id: string) => exerciseById.get(id) ?? customExercises.find(exercise => exercise.id === id)
   const groups = planGroups(plan)
 
@@ -49,29 +56,52 @@ export function PlanScreen({ plan, customExercises, onStart, onSave, onRegenerat
     return Boolean(from && to && groupKey(from) === groupKey(to))
   }
 
+  const updateDrag = (next: DragState | null) => {
+    dragRef.current = next
+    setDrag(next)
+  }
+
   const beginDrag = (event: ReactPointerEvent<HTMLButtonElement>, index: number) => {
     if (event.button !== 0) return
     event.preventDefault()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    setDrag({ fromIndex:index, targetIndex:index, pointerId:event.pointerId })
+    updateDrag({ fromIndex:index, targetIndex:index, pointerId:event.pointerId })
+    try { event.currentTarget.setPointerCapture?.(event.pointerId) } catch { /* global listeners keep the drag active */ }
   }
 
-  const moveDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (!drag || drag.pointerId !== event.pointerId) return
-    const row = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-reorder-index]')
-    const targetIndex = Number(row?.dataset.reorderIndex)
-    if (Number.isInteger(targetIndex) && sameGroup(drag.fromIndex, targetIndex) && targetIndex !== drag.targetIndex) {
-      setDrag(current => current ? { ...current, targetIndex } : current)
+  useEffect(() => {
+    if (!drag) return
+
+    const moveDrag = (event: PointerEvent) => {
+      const current = dragRef.current
+      if (!current || current.pointerId !== event.pointerId) return
+      event.preventDefault()
+      const row = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-reorder-index]')
+      const targetIndex = Number(row?.dataset.reorderIndex)
+      if (Number.isInteger(targetIndex) && sameGroup(current.fromIndex, targetIndex) && targetIndex !== current.targetIndex) {
+        updateDrag({ ...current, targetIndex })
+      }
     }
-  }
 
-  const finishDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (!drag || drag.pointerId !== event.pointerId) return
-    try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* pointer capture can already be released */ }
-    const completed = drag
-    setDrag(null)
-    if (completed.fromIndex !== completed.targetIndex) onReorder(completed.fromIndex, completed.targetIndex)
-  }
+    const finishDrag = (event: PointerEvent) => {
+      const completed = dragRef.current
+      if (!completed || completed.pointerId !== event.pointerId) return
+      updateDrag(null)
+      if (completed.fromIndex !== completed.targetIndex) onReorder(completed.fromIndex, completed.targetIndex)
+    }
+
+    const cancelDrag = (event: PointerEvent) => {
+      if (dragRef.current?.pointerId === event.pointerId) updateDrag(null)
+    }
+
+    window.addEventListener('pointermove', moveDrag, { passive:false })
+    window.addEventListener('pointerup', finishDrag)
+    window.addEventListener('pointercancel', cancelDrag)
+    return () => {
+      window.removeEventListener('pointermove', moveDrag)
+      window.removeEventListener('pointerup', finishDrag)
+      window.removeEventListener('pointercancel', cancelDrag)
+    }
+  }, [drag?.pointerId, drag?.fromIndex, onReorder, plan])
 
   const keyboardReorder = (event: ReactKeyboardEvent<HTMLButtonElement>, group: PlanGroup, index: number) => {
     if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return
@@ -115,9 +145,6 @@ export function PlanScreen({ plan, customExercises, onStart, onSave, onRegenerat
                 type="button"
                 className="drag-handle"
                 onPointerDown={event => beginDrag(event, index)}
-                onPointerMove={moveDrag}
-                onPointerUp={finishDrag}
-                onPointerCancel={() => setDrag(null)}
                 onKeyDown={event => keyboardReorder(event, group, index)}
                 aria-label={`Drag ${exercise.name} to reorder. Use arrow keys for keyboard reordering.`}
               ><span aria-hidden="true">⠿</span> Drag</button>

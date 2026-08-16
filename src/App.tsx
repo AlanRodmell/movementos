@@ -35,7 +35,8 @@ export default function App() {
   const toggleList = (key: 'favourites'|'avoidList', id: string) => setState(current => ({ ...current, profile: { ...current.profile, [key]: current.profile[key].includes(id) ? current.profile[key].filter(item => item !== id) : [...current.profile[key], id] } }))
   const startPlan = () => {
     if (!plan) return
-    setState(current => ({ ...current, activeSession: { plan, index:0, remainingSeconds:plan.exercises[0]?.durationSeconds ?? 0, running:true, deadlineAt:Date.now() + (plan.exercises[0]?.durationSeconds ?? 0) * 1000, startedAt:Date.now(), completedExerciseIds:[] } }))
+    const startedAt=Date.now()
+    setState(current => ({ ...current, activeSession: { plan, index:0, phase:'get_ready', remainingSeconds:5, running:true, deadlineAt:startedAt + 5000, startedAt, completedExerciseIds:[] } }))
     navigate('player')
   }
   const persistSession = useCallback((activeSession: ActiveSession) => setState(current => ({ ...current, activeSession })), [])

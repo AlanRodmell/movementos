@@ -63,6 +63,12 @@ describe('state migration', () => {
     expect(restored.exerciseStats.u1.progressionReady).toBe(true)
   })
 
+  it('preserves the player phase when a session is resumed',()=>{
+    const plan={id:'resume',name:'Resume',intention:'train' as const,goal:'general' as const,durationMinutes:1,createdAt:new Date(0).toISOString(),focusAreas:['full_body' as const],insights:[],exercises:[{exerciseId:'x001',prescription:'10 reps',durationSeconds:30,rationale:'Test',section:'Main work' as const}]}
+    const source={...defaultState,activeSession:{plan,index:0,phase:'waiting' as const,remainingSeconds:0,running:false,deadlineAt:null,startedAt:1,completedExerciseIds:['x001']}}
+    expect(normaliseState(serializeLegacyState(source)).activeSession).toEqual(expect.objectContaining({phase:'waiting',remainingSeconds:0,running:false}))
+  })
+
   it('preserves new joint and extremity issue areas',()=>{
     const source={...defaultState,dailyCheckIn:{date:'Sat Aug 16 2026',tightAreas:['hands' as const,'knees' as const,'feet' as const],primaryArea:'knees' as const},issues:[{id:'joint',area:'elbows' as const,severity:'moderate' as const,status:'active' as const,note:'',createdAt:new Date(0).toISOString(),side:'left' as const,resolvedAt:null}]}
     const restored=normaliseState(serializeLegacyState(source))

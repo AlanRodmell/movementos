@@ -19,7 +19,7 @@ export const defaultState: AppState = {
 const goals: Goal[] = ['general','strength','muscle','endurance','mobility']
 const categories: Category[] = ['warmup','upper','lower','core','conditioning','mobility','stretching','mindfulness']
 const equipment: Equipment[] = ['none','wall','chair','bench','table','bar','bands','dumbbells','kettlebell','barbell','cable','machine','slider','box','rope']
-const areas: MuscleArea[] = ['full_body','upper_body','lower_body','chest','upper_back','lower_back','shoulders','anterior_shoulder','posterior_shoulder','biceps','triceps','core','deep_core','rectus_abdominis','obliques','hips','hip_flexors','glutes','quads','hamstrings','adductors','calves','legs','neck','mind','elbows','forearms','wrists','hands','knees','shins','ankles','feet']
+const areas: MuscleArea[] = ['full_body','upper_body','lower_body','chest','upper_back','mid_back','lower_back','shoulders','anterior_shoulder','posterior_shoulder','biceps','triceps','core','deep_core','rectus_abdominis','obliques','hips','hip_flexors','glutes','quads','hamstrings','adductors','calves','legs','neck','mind','elbows','forearms','wrists','hands','knees','shins','ankles','feet']
 const safeText = (value: unknown, fallback = '', max = 500) => typeof value === 'string' ? value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').slice(0, max) : fallback
 const safeIds = (value: unknown) => Array.isArray(value) ? [...new Set(value.filter(item => typeof item === 'string' && /^[\w-]{1,100}$/.test(item)))].slice(0, 1000) : []
 const level = (value: unknown): Level => Math.max(1, Math.min(5, Number(value) || 2)) as Level

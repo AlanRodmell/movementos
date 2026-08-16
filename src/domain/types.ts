@@ -143,6 +143,7 @@ export interface DailyCheckIn {
 export interface ActiveSession {
   plan: WorkoutPlan
   index: number
+  phase: 'get_ready' | 'work' | 'switch_sides' | 'waiting' | 'rest'
   remainingSeconds: number
   running: boolean
   deadlineAt: number | null

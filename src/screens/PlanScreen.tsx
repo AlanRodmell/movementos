@@ -13,11 +13,16 @@ interface DragState {
   fromIndex: number
   targetIndex: number
   pointerId: number
+  startX: number
   startY: number
   offsetY: number
   rowHeight: number
+  activated: boolean
   moved: boolean
 }
+
+const DRAG_HOLD_MS = 1000
+const HOLD_MOVE_TOLERANCE = 8
 
 function groupKey(item: WorkoutExercise) {
   return item.section === 'Main work' && item.setNumber ? `main-${item.setNumber}` : item.section
@@ -66,6 +71,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
   const [exerciseSearch, setExerciseSearch] = useState('')
   const [drag, setDrag] = useState<DragState | null>(null)
   const dragRef = useRef<DragState | null>(null)
+  const holdTimerRef = useRef<number | null>(null)
   const groupSignature = groups.map(group => group.key).join('|')
   const resolve = (id: string) => exerciseById.get(id) ?? customExercises.find(exercise => exercise.id === id)
   const activeGroup = groups.find(group => group.key === activeGroupKey) ?? groups[0]
@@ -90,20 +96,36 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
     setDrag(next)
   }
 
+  const clearHoldTimer = () => {
+    if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current)
+    holdTimerRef.current = null
+  }
+
+  useEffect(() => clearHoldTimer, [])
+
   const beginDrag = (event: ReactPointerEvent<HTMLDivElement>, index: number) => {
     if (event.button !== 0 || (event.target as HTMLElement).closest('button,a,input,select,textarea')) return
     event.preventDefault()
     event.currentTarget.focus()
+    const pointerId = event.pointerId
     updateDrag({
       fromIndex:index,
       targetIndex:index,
-      pointerId:event.pointerId,
+      pointerId,
+      startX:event.clientX,
       startY:event.clientY,
       offsetY:0,
       rowHeight:event.currentTarget.getBoundingClientRect().height + 8,
+      activated:false,
       moved:false,
     })
-    try { event.currentTarget.setPointerCapture?.(event.pointerId) } catch { /* global listeners keep the gesture active */ }
+    clearHoldTimer()
+    holdTimerRef.current = window.setTimeout(() => {
+      const current = dragRef.current
+      if (current?.pointerId === pointerId) updateDrag({ ...current, activated:true })
+      holdTimerRef.current = null
+    }, DRAG_HOLD_MS)
+    try { event.currentTarget.setPointerCapture?.(pointerId) } catch { /* global listeners keep the gesture active */ }
   }
 
   useEffect(() => {
@@ -112,6 +134,13 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
     const moveDrag = (event: PointerEvent) => {
       const current = dragRef.current
       if (!current || current.pointerId !== event.pointerId) return
+      if (!current.activated) {
+        if (Math.hypot(event.clientX - current.startX, event.clientY - current.startY) > HOLD_MOVE_TOLERANCE) {
+          clearHoldTimer()
+          updateDrag(null)
+        }
+        return
+      }
       const offsetY = event.clientY - current.startY
       if (!current.moved && Math.abs(offsetY) < 6) return
       event.preventDefault()
@@ -126,6 +155,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
     const finishDrag = (event: PointerEvent) => {
       const completed = dragRef.current
       if (!completed || completed.pointerId !== event.pointerId) return
+      clearHoldTimer()
       updateDrag(null)
       if (completed.moved) {
         if (completed.fromIndex !== completed.targetIndex) onReorder(completed.fromIndex, completed.targetIndex)
@@ -135,7 +165,10 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
     }
 
     const cancelDrag = (event: PointerEvent) => {
-      if (dragRef.current?.pointerId === event.pointerId) updateDrag(null)
+      if (dragRef.current?.pointerId === event.pointerId) {
+        clearHoldTimer()
+        updateDrag(null)
+      }
     }
 
     window.addEventListener('pointermove', moveDrag, { passive:false })
@@ -195,7 +228,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
       <section className={`plan-section routine-set ${activeGroup.key.startsWith('main-') ? 'main-set' : ''}`}>
         <div className="section-heading">
           <div><h2>{activeGroup.label.replace('Main circuit — ', '')}</h2><small>{activeGroup.note}</small></div>
-          <div className="plan-heading-actions"><span className="drag-instruction">↕ Drag cards to reorder</span><button className="add-exercise-button" onClick={toggleAddExercise} aria-expanded={addingToGroupKey === activeGroup.key}>+ Add exercise</button></div>
+          <div className="plan-heading-actions"><span className="drag-instruction">↕ Hold 1 second, then drag to reorder</span><button className="add-exercise-button" onClick={toggleAddExercise} aria-expanded={addingToGroupKey === activeGroup.key}>+ Add exercise</button></div>
         </div>
         {addingToGroupKey === activeGroup.key && <section className="exercise-picker" aria-label={`Add exercise to ${activeGroup.label}`}>
           <header><div><strong>Add an exercise</strong><small>{activeGroup.key.startsWith('main-') ? 'It will be added to every main set.' : `It will be added to ${activeGroup.label}.`}</small></div><button onClick={toggleAddExercise} aria-label="Close exercise picker">×</button></header>
@@ -217,14 +250,14 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
             else if (drag?.moved && fromPosition < targetPosition && position > fromPosition && position <= targetPosition) transform = `translateY(-${drag.rowHeight}px)`
             else if (drag?.moved && fromPosition > targetPosition && position >= targetPosition && position < fromPosition) transform = `translateY(${drag.rowHeight}px)`
             return <div
-              className={`plan-exercise ${selectedIndex === index ? 'selected' : ''} ${isDragging && drag?.moved ? 'dragging' : ''} ${isDropTarget ? 'drop-target' : ''} ${item.scaled === 'up' ? 'scaled-up' : item.scaled === 'down' ? 'scaled-down' : ''}`}
+              className={`plan-exercise ${selectedIndex === index ? 'selected' : ''} ${isDragging && drag?.activated ? 'drag-ready' : ''} ${isDragging && drag?.moved ? 'dragging' : ''} ${isDropTarget ? 'drop-target' : ''} ${item.scaled === 'up' ? 'scaled-up' : item.scaled === 'down' ? 'scaled-down' : ''}`}
               key={`${activeGroup.key}_${item.exerciseId}_${index}`}
               data-reorder-index={index}
               role="listitem"
               tabIndex={0}
-              aria-label={`${exercise.name}, ${item.prescription}. Drag to reorder or press Enter for details.`}
+              aria-label={`${exercise.name}, ${item.prescription}. Hold for 1 second, then drag to reorder, or press Enter for details.`}
               aria-roledescription="draggable exercise"
-              aria-grabbed={Boolean(isDragging && drag?.moved)}
+              aria-grabbed={Boolean(isDragging && drag?.activated)}
               onPointerDown={event => beginDrag(event, index)}
               onKeyDown={event => keyboardRowAction(event, activeGroup, index)}
               style={transform ? { transform } : undefined}

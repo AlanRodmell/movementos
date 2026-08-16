@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { generateWorkout } from '../domain/engine'
 import { defaultState } from '../storage/state'
 import { PlanScreen } from './PlanScreen'
 
 it('uses set navigation, whole-row dragging and an exercise inspector without move controls', () => {
+  vi.useFakeTimers()
   const plan = generateWorkout({
     intention:'train', goal:'strength', durationMinutes:30, focusAreas:['full_body'], equipment:defaultState.profile.equipment,
     level:2, includeConditioning:false, includeWarmup:false, exercisesPerRound:4, targetSets:2, recoveryModes:['mobility','stretching'],
@@ -42,7 +43,15 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
   expect(onReorder).toHaveBeenCalledWith(firstSetIndexes[0], firstSetIndexes[1])
 
   onReorder.mockClear()
+  fireEvent.pointerDown(rows[0], { pointerId:6, button:0, clientX:10, clientY:10 })
+  fireEvent.pointerMove(window, { pointerId:6, clientX:10, clientY:19 })
+  fireEvent.pointerUp(window, { pointerId:6, clientX:10, clientY:19 })
+  act(()=>vi.advanceTimersByTime(1000))
+  expect(onReorder).not.toHaveBeenCalled()
+
   fireEvent.pointerDown(rows[0], { pointerId:7, button:0, clientX:10, clientY:10 })
+  act(()=>vi.advanceTimersByTime(1000))
+  expect(rows[0]).toHaveAttribute('aria-grabbed','true')
   fireEvent.pointerMove(window, { pointerId:7, clientX:10, clientY:18 })
   fireEvent.pointerUp(window, { pointerId:7, clientX:10, clientY:18 })
   expect(onReorder).toHaveBeenCalledWith(firstSetIndexes[0], firstSetIndexes[1])
@@ -58,6 +67,7 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
   fireEvent.change(screen.getByRole('searchbox', { name:'Search exercises to add' }), { target:{ value:'Dumbbell Floor Press' } })
   fireEvent.click(screen.getByRole('button', { name:/Dumbbell Floor Press/i }))
   expect(onAdd).toHaveBeenCalledWith(firstSetIndexes[firstSetIndexes.length - 1], 'x001')
+  vi.useRealTimers()
 })
 
 it('turns the save action into a saved-workout link after saving',()=>{

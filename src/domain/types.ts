@@ -21,7 +21,7 @@ export type Equipment =
 export type Category = 'warmup' | 'upper' | 'lower' | 'core' | 'conditioning' | 'mobility' | 'stretching' | 'mindfulness'
 export type RecoveryMode = 'mobility' | 'stretching'
 export type MuscleArea =
-  | 'full_body' | 'upper_body' | 'lower_body' | 'chest' | 'upper_back' | 'lower_back'
+  | 'full_body' | 'upper_body' | 'lower_body' | 'chest' | 'upper_back' | 'mid_back' | 'lower_back'
   | 'shoulders' | 'anterior_shoulder' | 'posterior_shoulder' | 'biceps' | 'triceps'
   | 'core' | 'deep_core' | 'rectus_abdominis' | 'obliques' | 'hips' | 'hip_flexors'
   | 'glutes' | 'quads' | 'hamstrings' | 'adductors' | 'calves' | 'legs' | 'neck' | 'mind'

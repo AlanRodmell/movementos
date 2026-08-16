@@ -1,9 +1,15 @@
-import { catalogueStats, exerciseById, exerciseVideoUrl } from '../data/exercises'
+import { catalogueStats, exerciseById, exercises, exerciseVideoUrl } from '../data/exercises'
 import { defaultState } from '../storage/state'
 import { addPlanExercise, applySessionCompletion, avoidPlanExercise, createManualWorkout, exerciseMatchesArea, generateWorkout, getExerciseDecision, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
 import type { BuilderPreferences, WorkoutSession } from './types'
 
 const preferences: BuilderPreferences = { intention:'train', goal:'strength', durationMinutes:30, focusAreas:['upper_body'], equipment:['none','wall','chair'], level:2, includeConditioning:false, includeWarmup:true, exercisesPerRound:'auto', targetSets:'auto', recoveryModes:['mobility','stretching'] }
+
+it('maps mid-back focus to exercises targeting the back',()=>{
+  const backExercise=exercises.find(exercise=>exercise.primaryMuscles.includes('upper_back'))
+  expect(backExercise).toBeDefined()
+  expect(exerciseMatchesArea(backExercise!, 'mid_back')).toBe(true)
+})
 
 describe('workout engine', () => {
   it('substantially expands and preserves the catalogue', () => {

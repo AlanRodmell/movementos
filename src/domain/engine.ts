@@ -55,7 +55,7 @@ const today = () => new Date().toDateString()
 const allExercises = (state: AppState) => [...exercises, ...state.customExercises]
 const resolveExercise = (id: string, state: AppState) => exerciseById.get(id) ?? state.customExercises.find(item => item.id === id)
 const muscles = (exercise: Exercise) => [...exercise.primaryMuscles, ...exercise.secondaryMuscles]
-const upperAreas = new Set<MuscleArea>(['neck','shoulders','anterior_shoulder','posterior_shoulder','chest','upper_back','biceps','triceps','elbows','forearms','wrists','hands'])
+const upperAreas = new Set<MuscleArea>(['neck','shoulders','anterior_shoulder','posterior_shoulder','chest','upper_back','mid_back','biceps','triceps','elbows','forearms','wrists','hands'])
 const lowerAreas = new Set<MuscleArea>(['hips','hip_flexors','glutes','quads','hamstrings','adductors','calves','legs','knees','shins','ankles','feet'])
 const coreAreas = new Set<MuscleArea>(['core','deep_core','rectus_abdominis','obliques','lower_back'])
 
@@ -109,6 +109,7 @@ export function exerciseMatchesArea(exercise: Exercise, area: MuscleArea) {
   if (area === 'core') {
     return exercise.category === 'core' || muscles(exercise).some(value => coreAreas.has(value))
   }
+  if (area === 'mid_back') return muscles(exercise).includes('upper_back')
   return muscles(exercise).includes(area) || jointOrExtremityMatch(exercise, area)
 }
 

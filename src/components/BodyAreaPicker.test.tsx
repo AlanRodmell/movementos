@@ -6,6 +6,7 @@ it('keeps detailed areas grouped until their body region is opened',()=>{
   render(<BodyAreaPicker value={[]} onChange={onChange}/>)
   expect(screen.queryByRole('button',{name:'Hands'})).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button',{name:/upper body/i}))
+  expect(screen.getByRole('button',{name:'Mid back'})).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button',{name:'Hands'}))
   expect(onChange).toHaveBeenCalledWith(['hands'])
   expect(screen.getByRole('button',{name:/upper body/i})).toHaveAttribute('aria-expanded','true')

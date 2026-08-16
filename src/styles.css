@@ -306,6 +306,15 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .timer.complete { color:#9bcbff; }
 .player-prescription { color:#9bcbff; text-transform:uppercase; letter-spacing:.08em; }
 .player-centre small { margin-top:12px; color:#a9c5e5; }
+.player-phase-screen { justify-content:center; gap:18px; }
+.player-phase-card { min-height:520px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:36px 20px; text-align:center; border:1px solid #315f95; border-radius:26px; background:rgba(4,29,67,.35); }
+.player-phase-card h1 { margin:12px 0 0; font-size:clamp(2rem,8vw,4rem); }
+.player-phase-card p { color:#d5e4f5; }
+.phase-symbol { width:64px; height:64px; display:grid; place-items:center; margin-bottom:20px; border-radius:20px; background:#0d4488; font-size:2rem; }
+.player-next-card { width:min(100%,520px); display:grid; gap:6px; margin-top:28px; padding:18px; border:1px solid #4b7eb7; border-radius:16px; background:#0d4488; text-align:center; }
+.player-next-card small { color:#a9c5e5; font-size:.65rem; font-weight:850; letter-spacing:.1em; }
+.player-next-card strong { color:white; }
+.rest-phase h1 { margin-bottom:0; color:#d5e4f5; }
 .player-adjustments { display:flex; flex-wrap:wrap; justify-content:center; gap:7px; margin-top:20px; }
 .player-adjustments button { border:1px solid #4b7eb7; background:#0d4488; color:#e8f2ff; border-radius:9px; padding:7px 10px; font-size:.68rem; font-weight:800; }
 .player-actions { display:grid; gap:12px; }

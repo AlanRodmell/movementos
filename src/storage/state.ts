@@ -133,7 +133,10 @@ function migrateActiveSession(value: unknown): ActiveSession | null {
   const plan = planFromUnknown(raw.plan, 'active_plan')
   if (!plan) return null
   const index = Math.max(0, Math.min(plan.exercises.length - 1, Number(raw.index) || 0))
-  return { plan, index, remainingSeconds: Math.max(0, Number(raw.remainingSeconds) || plan.exercises[index].durationSeconds), running: Boolean(raw.running), deadlineAt: Number(raw.deadlineAt) || null, startedAt: Number(raw.startedAt) || Date.now(), completedExerciseIds: safeIds(raw.completedExerciseIds) }
+  const phase:ActiveSession['phase']=['get_ready','work','switch_sides','waiting','rest'].includes(String(raw.phase)) ? raw.phase as ActiveSession['phase'] : 'work'
+  const rawRemaining=Number(raw.remainingSeconds)
+  const remainingSeconds=Number.isFinite(rawRemaining)&&rawRemaining>=0?rawRemaining:(phase==='get_ready'?5:phase==='rest'?15:plan.exercises[index].durationSeconds)
+  return { plan, index, phase, remainingSeconds, running: phase==='waiting'?false:Boolean(raw.running), deadlineAt: Number(raw.deadlineAt) || null, startedAt: Number(raw.startedAt) || Date.now(), completedExerciseIds: safeIds(raw.completedExerciseIds) }
 }
 
 export function normaliseState(value: unknown): AppState {

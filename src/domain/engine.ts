@@ -55,6 +55,21 @@ const today = () => new Date().toDateString()
 const allExercises = (state: AppState) => [...exercises, ...state.customExercises]
 const resolveExercise = (id: string, state: AppState) => exerciseById.get(id) ?? state.customExercises.find(item => item.id === id)
 const muscles = (exercise: Exercise) => [...exercise.primaryMuscles, ...exercise.secondaryMuscles]
+const upperAreas = new Set<MuscleArea>(['neck','shoulders','anterior_shoulder','posterior_shoulder','chest','upper_back','biceps','triceps','elbows','forearms','wrists','hands'])
+const lowerAreas = new Set<MuscleArea>(['hips','hip_flexors','glutes','quads','hamstrings','adductors','calves','legs','knees','shins','ankles','feet'])
+const coreAreas = new Set<MuscleArea>(['core','deep_core','rectus_abdominis','obliques','lower_back'])
+
+function jointOrExtremityMatch(exercise: Exercise, area: MuscleArea) {
+  const text = `${exercise.name} ${exercise.pattern}`.toLowerCase()
+  const loadedGrip = exercise.equipment.some(item => ['dumbbells','kettlebell','barbell','bar','bands','cable','machine','rope'].includes(item))
+  if (area === 'elbows') return muscles(exercise).some(item => item === 'biceps' || item === 'triceps') || (exercise.category !== 'lower' && /press|push|pull|row|curl|extension|dip|throw|elbow/.test(text))
+  if (area === 'forearms' || area === 'hands') return loadedGrip || /grip|carry|hang|pull.?up|chin.?up|row|curl|deadlift|swing|rope|push.?up|plank|crawl|handstand|bear|quadruped/.test(text)
+  if (area === 'wrists') return loadedGrip || /push.?up|plank|crawl|handstand|bear|quadruped|wrist/.test(text)
+  if (area === 'knees') return /squat|lunge|step|knee|leg.?press|leg.?extension|leg.?curl|pistol|jump|run|split.?squat/.test(text)
+  if (area === 'shins') return /tibialis|toe.?raise|heel.?walk|shin|run|jump|skip/.test(text)
+  if (area === 'ankles' || area === 'feet') return muscles(exercise).includes('calves') || /calf|ankle|foot|feet|toe|balance|walk|run|jump|skip|hop|lunge|squat|step/.test(text)
+  return false
+}
 
 function hash(input: string) {
   let value = 2166136261
@@ -86,15 +101,15 @@ export function programmingFamily(exercise: Exercise): ProgrammingFamily {
 export function exerciseMatchesArea(exercise: Exercise, area: MuscleArea) {
   if (area === 'full_body') return true
   if (area === 'upper_body') {
-    return exercise.category === 'upper' || muscles(exercise).some(value => ['chest', 'upper_back', 'shoulders', 'anterior_shoulder', 'posterior_shoulder', 'biceps', 'triceps', 'neck'].includes(value))
+    return exercise.category === 'upper' || muscles(exercise).some(value => upperAreas.has(value))
   }
   if (area === 'lower_body' || area === 'legs') {
-    return exercise.category === 'lower' || muscles(exercise).some(value => ['hips', 'hip_flexors', 'glutes', 'quads', 'hamstrings', 'adductors', 'calves', 'legs'].includes(value))
+    return exercise.category === 'lower' || muscles(exercise).some(value => lowerAreas.has(value))
   }
   if (area === 'core') {
-    return exercise.category === 'core' || muscles(exercise).some(value => ['core', 'deep_core', 'rectus_abdominis', 'obliques', 'lower_back'].includes(value))
+    return exercise.category === 'core' || muscles(exercise).some(value => coreAreas.has(value))
   }
-  return muscles(exercise).includes(area)
+  return muscles(exercise).includes(area) || jointOrExtremityMatch(exercise, area)
 }
 
 const checkInAreas = (state: AppState) => state.dailyCheckIn.date === today() ? state.dailyCheckIn.tightAreas : []
@@ -154,7 +169,11 @@ export const getAreaLoadBreakdown = (state: AppState, hours = 72) => ({
 export function getReadiness(state: AppState) {
   const rows = (['upper', 'lower', 'core', 'conditioning'] as const).map(area => {
     const checkAreas = checkInAreas(state)
-    const affected = checkAreas.some(check => check === 'full_body' || check === (area === 'upper' ? 'upper_body' : area === 'lower' ? 'lower_body' : area))
+    const affected = checkAreas.some(check => check === 'full_body'
+      || (area === 'upper' && (check === 'upper_body' || upperAreas.has(check)))
+      || (area === 'lower' && (check === 'lower_body' || lowerAreas.has(check)))
+      || (area === 'core' && coreAreas.has(check))
+      || (area === 'conditioning' && lowerAreas.has(check)))
     const load48 = getAreaLoad(state, area, 48)
     const load72 = getAreaLoad(state, area, 72)
     const cutoff = Date.now() - 48 * 3600000

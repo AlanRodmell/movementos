@@ -63,6 +63,13 @@ describe('state migration', () => {
     expect(restored.exerciseStats.u1.progressionReady).toBe(true)
   })
 
+  it('preserves new joint and extremity issue areas',()=>{
+    const source={...defaultState,dailyCheckIn:{date:'Sat Aug 16 2026',tightAreas:['hands' as const,'knees' as const,'feet' as const],primaryArea:'knees' as const},issues:[{id:'joint',area:'elbows' as const,severity:'moderate' as const,status:'active' as const,note:'',createdAt:new Date(0).toISOString(),side:'left' as const,resolvedAt:null}]}
+    const restored=normaliseState(serializeLegacyState(source))
+    expect(restored.dailyCheckIn.tightAreas).toEqual(['hands','knees','feet'])
+    expect(restored.issues[0].area).toBe('elbows')
+  })
+
   it('rebuilds progression history if an earlier React build erased exerciseStats',()=>{
     const restored=normaliseState({workoutHistory:[1,2,3].map(index=>({id:`s${index}`,date:`2026-08-1${index}T10:00:00Z`,name:'Workout',rating:'good',exercises:[{id:'u1',name:'Push-Up',reps:'10 reps',secs:45}]})),exerciseStats:{}})
     expect(restored.exerciseStats.u1.completed).toBe(3)

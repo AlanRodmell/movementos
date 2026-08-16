@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { BodyAreaPicker } from '../components/BodyAreaPicker'
+import { bodyAreaLabel } from '../data/bodyAreas'
 import type { BuilderPreferences, DailyCheckIn, Equipment, Goal, Intention, MuscleArea, Profile, RecoveryMode } from '../domain/types'
 
 const goals: Array<{ id: Goal; title: string; note: string }> = [
@@ -27,7 +29,6 @@ export function BuilderScreen({ profile, dailyCheckIn, onCheckIn, onGenerate }: 
   const toggleArea = (area: MuscleArea) => setFocusAreas(current => current.includes(area) ? current.filter(item => item !== area) : [...current.filter(item => item !== 'full_body'), area])
   const toggleEquipment = (item: Equipment) => setEquipment(current => current.includes(item) ? current.filter(value => value !== item) : [...current, item])
   const toggleRecoveryMode = (mode: RecoveryMode) => setRecoveryModes(current => current.includes(mode) ? (current.length === 1 ? current : current.filter(item => item !== mode)) : [...current, mode])
-  const checkInOptions: Array<[MuscleArea,string]> = [['neck','Neck'],['shoulders','Shoulders'],['chest','Chest'],['upper_back','Upper back'],['lower_back','Lower back'],['hips','Hips'],['hip_flexors','Hip flexors'],['glutes','Glutes'],['quads','Quads'],['hamstrings','Hamstrings'],['calves','Calves'],['core','Core']]
   const next = () => {
     if (step === 0) onCheckIn({ date:new Date().toDateString(),tightAreas,primaryArea:tightAreas.length ? (primaryArea ?? tightAreas[0]) : null })
     if (step < 4) setStep(step + 1)
@@ -35,7 +36,7 @@ export function BuilderScreen({ profile, dailyCheckIn, onCheckIn, onGenerate }: 
   }
   return <div className="screen builder-screen">
     <div className="wizard-progress"><span>SETUP {step + 1} OF 5</span><div>{[0,1,2,3,4].map(value => <i className={value <= step ? 'active' : ''} key={value}/>)}</div></div>
-    {step === 0 && <section className="wizard-panel"><span className="eyebrow">DAILY CHECK-IN</span><h1>How are you moving today?</h1><p>Select anything that feels tight or sensitive. The engine will adapt volume and exercise choice for today.</p><div className="filter-pills"><button className={!tightAreas.length ? 'selected' : ''} onClick={() => { setTightAreas([]);setPrimaryArea(null) }}>Nothing to flag</button>{checkInOptions.map(([id,label]) => <button key={id} className={tightAreas.includes(id)?'selected':''} onClick={() => setTightAreas(current => { const next=current.includes(id)?current.filter(item=>item!==id):[...current,id];if(primaryArea===id&&!next.includes(id))setPrimaryArea(next[0]??null);return next })}>{label}</button>)}</div>{tightAreas.length>1&&<label className="checkin-primary">Most noticeable today<select value={primaryArea??tightAreas[0]} onChange={event=>setPrimaryArea(event.target.value as MuscleArea)}>{tightAreas.map(area=><option key={area} value={area}>{area.replaceAll('_',' ')}</option>)}</select></label>}</section>}
+    {step === 0 && <section className="wizard-panel"><span className="eyebrow">DAILY CHECK-IN</span><h1>How are you moving today?</h1><p>Select anything that feels tight or sensitive. Open a body region to see its muscles, joints, hands, or feet.</p><button className={`nothing-flag ${!tightAreas.length?'selected':''}`} onClick={() => { setTightAreas([]);setPrimaryArea(null) }}>Nothing to flag</button><BodyAreaPicker value={tightAreas} onChange={next=>{setTightAreas(next);if(primaryArea&&!next.includes(primaryArea))setPrimaryArea(next[0]??null)}}/>{tightAreas.length>1&&<label className="checkin-primary">Most noticeable today<select value={primaryArea??tightAreas[0]} onChange={event=>setPrimaryArea(event.target.value as MuscleArea)}>{tightAreas.map(area=><option key={area} value={area}>{bodyAreaLabel(area)}</option>)}</select></label>}</section>}
     {step === 1 && <section className="wizard-panel"><span className="eyebrow">INTENTION</span><h1>What does your body need?</h1><p>This changes the structure, intensity, and exercise pool.</p><div className="choice-stack">
       <button className={intention === 'train' ? 'choice selected' : 'choice'} onClick={() => { setIntention('train');setIncludeWarmup(true);if(durationMinutes===5||durationMinutes===10)setDuration('auto') }}><span className="choice-symbol">↑</span><span><strong>Train</strong><small>Strength, muscle or conditioning</small></span><b>✓</b></button>
       <button className={intention === 'recover' ? 'choice selected recovery' : 'choice'} onClick={() => { setIntention('recover');setIncludeWarmup(false);if(durationMinutes==='auto'||durationMinutes>30)setDuration(15) }}><span className="choice-symbol">〰</span><span><strong>Recover</strong><small>Choose mobility, stretching, or both</small></span><b>✓</b></button>

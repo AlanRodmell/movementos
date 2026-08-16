@@ -1,6 +1,6 @@
 import { catalogueStats, exerciseById, exerciseVideoUrl } from '../data/exercises'
 import { defaultState } from '../storage/state'
-import { addPlanExercise, applySessionCompletion, avoidPlanExercise, createManualWorkout, generateWorkout, getExerciseDecision, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
+import { addPlanExercise, applySessionCompletion, avoidPlanExercise, createManualWorkout, exerciseMatchesArea, generateWorkout, getExerciseDecision, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
 import type { BuilderPreferences, WorkoutSession } from './types'
 
 const preferences: BuilderPreferences = { intention:'train', goal:'strength', durationMinutes:30, focusAreas:['upper_body'], equipment:['none','wall','chair'], level:2, includeConditioning:false, includeWarmup:true, exercisesPerRound:'auto', targetSets:'auto', recoveryModes:['mobility','stretching'] }
@@ -24,6 +24,24 @@ describe('workout engine', () => {
     const state = { ...defaultState, issues: [{ id:'issue', area:'chest' as const, severity:'flare' as const, status:'active' as const, note:'', createdAt:new Date().toISOString(), side:'bilateral' as const, resolvedAt:null }] }
     const plan = generateWorkout(preferences, state, 'injury-seed')
     expect(plan.exercises.map(item => exerciseById.get(item.exerciseId)!).every(exercise => ![...exercise.primaryMuscles,...exercise.secondaryMuscles].includes('chest'))).toBe(true)
+  })
+
+  it('maps joint, hand, and foot issues to exercises that load them',()=>{
+    expect(exerciseMatchesArea(exerciseById.get('x012')!,'elbows')).toBe(true)
+    expect(exerciseMatchesArea(exerciseById.get('x042')!,'hands')).toBe(true)
+    expect(exerciseMatchesArea(exerciseById.get('x001')!,'wrists')).toBe(true)
+    expect(exerciseMatchesArea(exerciseById.get('x021')!,'knees')).toBe(true)
+    expect(exerciseMatchesArea(exerciseById.get('x040')!,'ankles')).toBe(true)
+    expect(exerciseMatchesArea(exerciseById.get('x040')!,'feet')).toBe(true)
+    expect(exerciseMatchesArea(exerciseById.get('x025')!,'knees')).toBe(false)
+  })
+
+  it('uses new body areas for prescription adjustment and flare exclusion',()=>{
+    const handState={...defaultState,issues:[{id:'hand',area:'hands' as const,severity:'moderate' as const,status:'active' as const,note:'',createdAt:new Date().toISOString(),side:'left' as const,resolvedAt:null}]}
+    expect(createManualWorkout(['x042'],handState).exercises[0].adjusted).toBe(true)
+    const kneeState={...defaultState,issues:[{id:'knee',area:'knees' as const,severity:'flare' as const,status:'active' as const,note:'',createdAt:new Date().toISOString(),side:'right' as const,resolvedAt:null}]}
+    const plan=generateWorkout({...preferences,focusAreas:['lower_body']},kneeState,'knee-flare')
+    expect(plan.exercises.every(item=>!exerciseMatchesArea(exerciseById.get(item.exerciseId)!, 'knees'))).toBe(true)
   })
 
   it('is deterministic for the same inputs and seed', () => {

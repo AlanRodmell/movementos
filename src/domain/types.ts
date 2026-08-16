@@ -25,6 +25,7 @@ export type MuscleArea =
   | 'shoulders' | 'anterior_shoulder' | 'posterior_shoulder' | 'biceps' | 'triceps'
   | 'core' | 'deep_core' | 'rectus_abdominis' | 'obliques' | 'hips' | 'hip_flexors'
   | 'glutes' | 'quads' | 'hamstrings' | 'adductors' | 'calves' | 'legs' | 'neck' | 'mind'
+  | 'elbows' | 'forearms' | 'wrists' | 'hands' | 'knees' | 'shins' | 'ankles' | 'feet'
 
 export interface Exercise {
   id: string

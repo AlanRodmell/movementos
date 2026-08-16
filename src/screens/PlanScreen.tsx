@@ -57,7 +57,7 @@ function pretty(value: string) {
   return value.replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase())
 }
 
-export function PlanScreen({ plan, customExercises, onStart, onSave, onRegenerate, onEasier, onHarder, onAdjust, onSwap, onReorder, onAdd, onRemove, onAvoid }: { plan: WorkoutPlan; customExercises: Exercise[]; onStart: () => void; onSave: () => void; onRegenerate: () => void; onEasier:(index:number)=>void; onHarder:(index:number)=>void; onAdjust:(index:number,direction:-1|1)=>void; onSwap:(index:number)=>void; onReorder:(fromIndex:number,toIndex:number)=>void; onAdd:(groupIndex:number,exerciseId:string)=>void; onRemove:(index:number)=>void; onAvoid:(index:number,id:string)=>void }) {
+export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, onViewSaved, onRegenerate, onEasier, onHarder, onAdjust, onSwap, onReorder, onAdd, onRemove, onAvoid }: { plan: WorkoutPlan; customExercises: Exercise[]; isSaved:boolean; onStart: () => void; onSave: () => void; onViewSaved:()=>void; onRegenerate: () => void; onEasier:(index:number)=>void; onHarder:(index:number)=>void; onAdjust:(index:number,direction:-1|1)=>void; onSwap:(index:number)=>void; onReorder:(fromIndex:number,toIndex:number)=>void; onAdd:(groupIndex:number,exerciseId:string)=>void; onRemove:(index:number)=>void; onAvoid:(index:number,id:string)=>void }) {
   const groups = planGroups(plan)
   const firstMainGroup = groups.find(group => group.key.startsWith('main-'))?.key ?? groups[0]?.key ?? ''
   const [activeGroupKey, setActiveGroupKey] = useState(firstMainGroup)
@@ -267,6 +267,7 @@ export function PlanScreen({ plan, customExercises, onStart, onSave, onRegenerat
     </div>}
 
     <details className="algorithm-note"><summary><span>✦</span><strong>Why this session?</strong></summary><p>{plan.insights.join(' ')}</p></details>
-    <div className="plan-footer-actions"><button className="secondary" onClick={onRegenerate}>Regenerate</button><button className="secondary" onClick={onSave}>Save session</button></div>
+    {isSaved&&<div className="save-confirmation" role="status">✓ Workout saved on this device</div>}
+    <div className="plan-footer-actions"><button className="secondary" onClick={onRegenerate}>Regenerate</button><button className={`secondary ${isSaved?'saved':''}`} onClick={isSaved?onViewSaved:onSave}>{isSaved?'View saved':'Save workout'}</button></div>
   </div>
 }

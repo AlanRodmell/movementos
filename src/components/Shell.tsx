@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
 
-export type View = 'home' | 'builder' | 'plan' | 'library' | 'player' | 'progress' | 'profile'
+export type View = 'home' | 'builder' | 'plan' | 'library' | 'saved' | 'player' | 'progress' | 'profile'
 
 const nav: Array<{ view: View; icon: string; label: string }> = [
   { view: 'home', icon: '⌂', label: 'Home' }, { view: 'builder', icon: '✦', label: 'Build' },
-  { view: 'library', icon: '◫', label: 'Explore' }, { view: 'progress', icon: '↗', label: 'Progress' },
+  { view: 'library', icon: '◫', label: 'Explore' }, { view: 'saved', icon: '▣', label: 'Saved' }, { view: 'progress', icon: '↗', label: 'Progress' },
 ]
 
 export function Shell({ view, title, onNavigate, onBack, children }: { view: View; title: string; onNavigate: (view: View) => void; onBack: () => void; children: ReactNode }) {

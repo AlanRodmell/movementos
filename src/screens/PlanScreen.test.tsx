@@ -14,8 +14,10 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
   render(<PlanScreen
     plan={plan}
     customExercises={[]}
+    isSaved={false}
     onStart={noop}
     onSave={noop}
+    onViewSaved={noop}
     onRegenerate={noop}
     onEasier={noop}
     onHarder={noop}
@@ -56,4 +58,22 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
   fireEvent.change(screen.getByRole('searchbox', { name:'Search exercises to add' }), { target:{ value:'Dumbbell Floor Press' } })
   fireEvent.click(screen.getByRole('button', { name:/Dumbbell Floor Press/i }))
   expect(onAdd).toHaveBeenCalledWith(firstSetIndexes[firstSetIndexes.length - 1], 'x001')
+})
+
+it('turns the save action into a saved-workout link after saving',()=>{
+  const plan=generateWorkout({
+    intention:'train',goal:'strength',durationMinutes:15,focusAreas:['upper_body'],equipment:defaultState.profile.equipment,
+    level:2,includeConditioning:false,includeWarmup:false,exercisesPerRound:3,targetSets:1,recoveryModes:['mobility','stretching'],
+  },defaultState,'save-plan')
+  const onSave=vi.fn()
+  const onViewSaved=vi.fn()
+  const noop=vi.fn()
+  const props={plan,customExercises:[],onStart:noop,onSave,onViewSaved,onRegenerate:noop,onEasier:noop,onHarder:noop,onAdjust:noop,onSwap:noop,onReorder:noop,onAdd:noop,onRemove:noop,onAvoid:noop}
+  const {rerender}=render(<PlanScreen {...props} isSaved={false}/>)
+  fireEvent.click(screen.getByRole('button',{name:'Save workout'}))
+  expect(onSave).toHaveBeenCalledOnce()
+  rerender(<PlanScreen {...props} isSaved/>)
+  expect(screen.getByRole('status')).toHaveTextContent('Workout saved')
+  fireEvent.click(screen.getByRole('button',{name:'View saved'}))
+  expect(onViewSaved).toHaveBeenCalledOnce()
 })

@@ -10,7 +10,7 @@ const categories: Array<{ area: MuscleArea; label: string; icon: string; note: s
   { area: 'hips', label: 'Mobility', icon: '〰', note: 'Restore range + control' },
 ]
 
-export function HomeScreen({ state, onBuild, onSuggested, onCategory, onResume, onOpenPlan }: { state: AppState; onBuild: () => void; onSuggested: () => void; onCategory: (area: MuscleArea) => void; onResume: () => void; onOpenPlan: (index: number) => void }) {
+export function HomeScreen({ state, onBuild, onSuggested, onCategory, onResume, onOpenPlan, onViewSaved }: { state: AppState; onBuild: () => void; onSuggested: () => void; onCategory: (area: MuscleArea) => void; onResume: () => void; onOpenPlan: (index: number) => void; onViewSaved:()=>void }) {
   const stats = getDashboardStats(state)
   return <div className="screen home-screen">
     {state.activeSession && <section className="resume-card"><div><span className="eyebrow">SESSION IN PROGRESS</span><h2>{state.activeSession.plan.name}</h2><p>Movement {state.activeSession.index + 1} of {state.activeSession.plan.exercises.length}</p></div><button className="primary" onClick={onResume}>Resume <span>→</span></button></section>}
@@ -34,7 +34,7 @@ export function HomeScreen({ state, onBuild, onSuggested, onCategory, onResume, 
       </button>)}
     </section>
 
-    {state.savedPlans.length > 0 && <><div className="section-heading"><div><span className="eyebrow">YOUR LIBRARY</span><h2>Saved sessions</h2></div><span>{state.savedPlans.length}</span></div><section className="saved-plan-list">{state.savedPlans.slice(0,3).map((plan,index) => <button key={plan.id} className="saved-plan-card" onClick={() => onOpenPlan(index)}><span><strong>{plan.name}</strong><small>{plan.exercises.length} movements · {plan.durationMinutes} min</small></span><b>→</b></button>)}</section></>}
+    {state.savedPlans.length > 0 && <><div className="section-heading"><div><span className="eyebrow">YOUR LIBRARY</span><h2>Saved workouts</h2></div><button className="section-link" onClick={onViewSaved}>View all ({state.savedPlans.length})</button></div><section className="saved-plan-list">{state.savedPlans.slice(0,3).map((plan,index) => <button key={plan.id} className="saved-plan-card" onClick={() => onOpenPlan(index)}><span><strong>{plan.name}</strong><small>{plan.exercises.length} movements · {plan.durationMinutes} min</small></span><b>→</b></button>)}</section></>}
 
     <section className="insight-card"><span className="insight-icon">✦</span><div><strong>How today’s suggestion works</strong><p>Movement OS balances movement patterns, recent muscle load, equipment, level, goals, variety, and active issues. Complete and rate sessions to improve the next recommendation.</p></div></section>
   </div>

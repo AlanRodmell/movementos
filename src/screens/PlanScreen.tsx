@@ -105,7 +105,6 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
 
   const beginDrag = (event: ReactPointerEvent<HTMLDivElement>, index: number) => {
     if (event.button !== 0 || (event.target as HTMLElement).closest('button,a,input,select,textarea')) return
-    event.preventDefault()
     event.currentTarget.focus()
     const pointerId = event.pointerId
     updateDrag({
@@ -125,7 +124,6 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
       if (current?.pointerId === pointerId) updateDrag({ ...current, activated:true })
       holdTimerRef.current = null
     }, DRAG_HOLD_MS)
-    try { event.currentTarget.setPointerCapture?.(pointerId) } catch { /* global listeners keep the gesture active */ }
   }
 
   useEffect(() => {
@@ -301,6 +299,6 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
 
     <details className="algorithm-note"><summary><span>✦</span><strong>Why this session?</strong></summary><p>{plan.insights.join(' ')}</p></details>
     {isSaved&&<div className="save-confirmation" role="status">✓ Workout saved on this device</div>}
-    <div className="plan-footer-actions"><button className="secondary" onClick={onRegenerate}>Regenerate</button><button className={`secondary ${isSaved?'saved':''}`} onClick={isSaved?onViewSaved:onSave}>{isSaved?'View saved':'Save workout'}</button></div>
+    <div className="plan-footer-actions"><button className="secondary" onClick={onRegenerate}>Regenerate</button><button className={`secondary ${isSaved?'saved':''}`} onClick={isSaved?onViewSaved:onSave}>{isSaved?'View saved':'Save workout'}</button><button className="primary plan-footer-start" onClick={onStart}>Start workout <span>→</span></button></div>
   </div>
 }

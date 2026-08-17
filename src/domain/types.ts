@@ -281,7 +281,7 @@ export interface LearningEvent {
   id: string
   at: string
   exerciseId?: string
-  type: WorkoutActionType | 'exercise_feedback' | 'overall_rating' | 'progression_accepted' | 'progression_kept' | 'progression_deferred'
+  type: WorkoutActionType | 'exercise_feedback' | 'overall_rating' | 'progression_accepted' | 'progression_kept' | 'progression_deferred' | 'progression_reverted'
   label: string
   context?: LearningContext
   feedback?: ExerciseFeedback

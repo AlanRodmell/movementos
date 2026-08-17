@@ -1,6 +1,6 @@
 import { catalogueStats, exerciseById, exercises, exerciseVideoUrl } from '../data/exercises'
 import { defaultState } from '../storage/state'
-import { addPlanExercise, applySessionCompletion, avoidPlanExercise, createManualWorkout, exerciseMatchesArea, generateWorkout, getExerciseDecision, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
+import { addPlanExercise, applySessionCompletion, avoidPlanExercise, createManualWorkout, exerciseMatchesArea, generateFreshWorkout, generateWorkout, getExerciseDecision, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
 import type { BuilderPreferences, WorkoutSession } from './types'
 
 const preferences: BuilderPreferences = { intention:'train', goal:'strength', durationMinutes:30, focusAreas:['upper_body'], equipment:['none','wall','chair'], level:2, includeConditioning:false, includeWarmup:true, exercisesPerRound:'auto', targetSets:'auto', recoveryModes:['mobility','stretching'] }
@@ -54,6 +54,15 @@ describe('workout engine', () => {
     const first = generateWorkout(preferences, defaultState, 'same').exercises.map(item => item.exerciseId)
     const second = generateWorkout(preferences, defaultState, 'same').exercises.map(item => item.exerciseId)
     expect(first).toEqual(second)
+  })
+
+  it('creates a fresh routine for each new builder submission',()=>{
+    const first=generateFreshWorkout(preferences,defaultState)
+    const next=generateFreshWorkout(preferences,defaultState,first)
+    const firstIds=first.exercises.map(item=>item.exerciseId)
+    const nextIds=next.exercises.map(item=>item.exerciseId)
+    expect(next.id).not.toBe(first.id)
+    expect(nextIds).not.toEqual(firstIds)
   })
 
   it('regenerates a meaningfully different but still valid circuit',()=>{

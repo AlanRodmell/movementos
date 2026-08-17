@@ -18,6 +18,7 @@ const MAX_LEVEL = 5
 const TRANSITION_SECONDS = 12
 const SET_REST_SECONDS = 45
 const MAIN_CATEGORIES: Category[] = ['upper', 'lower', 'core']
+let freshGenerationSequence = 0
 
 type ProgrammingFamily =
   | 'push'
@@ -537,6 +538,14 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
   const validationIssues = validateGeneratedPlan(plan, preferences, state, movementSlots)
   if (validationIssues.length) plan.insights.push(...validationIssues.map(issue => `Planning note: ${issue}`))
   return plan
+}
+
+export function generateFreshWorkout(preferences: BuilderPreferences, state: AppState, previousPlan?: WorkoutPlan | null) {
+  freshGenerationSequence += 1
+  const seed = `fresh-${Date.now()}-${freshGenerationSequence}`
+  const discouragedIds = previousPlan?.exercises.map(item => item.exerciseId) ?? []
+  const plan = generateWorkout(preferences, state, seed, discouragedIds)
+  return { ...plan, id:`${plan.id}_${freshGenerationSequence}` }
 }
 
 function compatiblePreferences(plan: WorkoutPlan, state: AppState): BuilderPreferences {

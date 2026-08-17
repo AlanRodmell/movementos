@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent } from 'react'
 import { exerciseById, exercises, exerciseVideoUrl } from '../data/exercises'
 import type { Exercise, WorkoutExercise, WorkoutPlan } from '../domain/types'
 
@@ -72,7 +72,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
   const [drag, setDrag] = useState<DragState | null>(null)
   const dragRef = useRef<DragState | null>(null)
   const holdTimerRef = useRef<number | null>(null)
-  const suppressClickRef = useRef(false)
+  const suppressClickUntilRef = useRef(0)
   const groupSignature = groups.map(group => group.key).join('|')
   const resolve = (id: string) => exerciseById.get(id) ?? customExercises.find(exercise => exercise.id === id)
   const activeGroup = groups.find(group => group.key === activeGroupKey) ?? groups[0]
@@ -106,8 +106,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
 
   const beginDrag = (event: ReactPointerEvent<HTMLDivElement>, index: number) => {
     const target = event.target as HTMLElement
-    if (event.button !== 0 || target.closest('button,a,input,select,textarea')) return
-    if (event.pointerType === 'touch' && !target.closest('.exercise-position')) return
+    if (event.pointerType === 'touch' || event.button !== 0 || target.closest('button,a,input,select,textarea')) return
     event.currentTarget.focus()
     event.currentTarget.setPointerCapture?.(event.pointerId)
     const pointerId = event.pointerId
@@ -130,22 +129,46 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
     }, DRAG_HOLD_MS)
   }
 
+  const beginTouchDrag = (event: ReactTouchEvent<HTMLDivElement>, index: number) => {
+    const target = event.target as HTMLElement
+    const touch = event.changedTouches[0]
+    if (!touch || target.closest('button,a,input,select,textarea')) return
+    event.currentTarget.focus()
+    updateDrag({
+      fromIndex:index,
+      targetIndex:index,
+      pointerId:touch.identifier,
+      startX:touch.clientX,
+      startY:touch.clientY,
+      offsetY:0,
+      rowHeight:event.currentTarget.getBoundingClientRect().height + 8,
+      activated:false,
+      moved:false,
+    })
+    clearHoldTimer()
+    holdTimerRef.current = window.setTimeout(() => {
+      const current = dragRef.current
+      if (current?.pointerId === touch.identifier) updateDrag({ ...current, activated:true })
+      holdTimerRef.current = null
+    }, DRAG_HOLD_MS)
+  }
+
   useEffect(() => {
     if (!drag) return
 
-    const moveDrag = (event: PointerEvent) => {
+    const moveDragTo = (clientX: number, clientY: number, preventDefault: () => void) => {
       const current = dragRef.current
-      if (!current || current.pointerId !== event.pointerId) return
+      if (!current) return
       if (!current.activated) {
-        if (Math.hypot(event.clientX - current.startX, event.clientY - current.startY) > HOLD_MOVE_TOLERANCE) {
+        if (Math.hypot(clientX - current.startX, clientY - current.startY) > HOLD_MOVE_TOLERANCE) {
           clearHoldTimer()
           updateDrag(null)
         }
         return
       }
-      const offsetY = event.clientY - current.startY
+      const offsetY = clientY - current.startY
       if (!current.moved && Math.abs(offsetY) < 6) return
-      event.preventDefault()
+      preventDefault()
       const source = plan.exercises[current.fromIndex]
       const groupIndexes = plan.exercises.map((item, index) => source && groupKey(item) === groupKey(source) ? index : -1).filter(index => index >= 0)
       const sourcePosition = groupIndexes.indexOf(current.fromIndex)
@@ -154,32 +177,56 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
       updateDrag({ ...current, targetIndex, offsetY, moved:true })
     }
 
-    const finishDrag = (event: PointerEvent) => {
+    const finishDrag = (pointerId: number) => {
       const completed = dragRef.current
-      if (!completed || completed.pointerId !== event.pointerId) return
+      if (!completed || completed.pointerId !== pointerId) return
       clearHoldTimer()
       updateDrag(null)
       if (completed.moved) {
-        suppressClickRef.current = true
-        window.setTimeout(() => { suppressClickRef.current = false }, 0)
+        suppressClickUntilRef.current = Date.now() + 500
         if (completed.fromIndex !== completed.targetIndex) onReorder(completed.fromIndex, completed.targetIndex)
       }
     }
 
+    const moveDrag = (event: PointerEvent) => {
+      if (dragRef.current?.pointerId !== event.pointerId) return
+      moveDragTo(event.clientX, event.clientY, () => event.preventDefault())
+    }
+
+    const finishPointerDrag = (event: PointerEvent) => finishDrag(event.pointerId)
+
+    const moveTouchDrag = (event: TouchEvent) => {
+      const current = dragRef.current
+      if (!current) return
+      const touch = Array.from(event.touches).find(candidate => candidate.identifier === current.pointerId)
+      if (touch) moveDragTo(touch.clientX, touch.clientY, () => event.preventDefault())
+    }
+
+    const finishTouchDrag = (event: TouchEvent) => {
+      const current = dragRef.current
+      if (current && Array.from(event.changedTouches).some(touch => touch.identifier === current.pointerId)) finishDrag(current.pointerId)
+    }
+
     const cancelDrag = (event: PointerEvent) => {
-      if (dragRef.current?.pointerId === event.pointerId) {
+      if (event.pointerType !== 'touch' && dragRef.current?.pointerId === event.pointerId) {
         clearHoldTimer()
         updateDrag(null)
       }
     }
 
     window.addEventListener('pointermove', moveDrag, { passive:false })
-    window.addEventListener('pointerup', finishDrag)
+    window.addEventListener('pointerup', finishPointerDrag)
     window.addEventListener('pointercancel', cancelDrag)
+    window.addEventListener('touchmove', moveTouchDrag, { passive:false })
+    window.addEventListener('touchend', finishTouchDrag)
+    window.addEventListener('touchcancel', finishTouchDrag)
     return () => {
       window.removeEventListener('pointermove', moveDrag)
-      window.removeEventListener('pointerup', finishDrag)
+      window.removeEventListener('pointerup', finishPointerDrag)
       window.removeEventListener('pointercancel', cancelDrag)
+      window.removeEventListener('touchmove', moveTouchDrag)
+      window.removeEventListener('touchend', finishTouchDrag)
+      window.removeEventListener('touchcancel', finishTouchDrag)
     }
   }, [drag?.pointerId, drag?.fromIndex, onReorder, plan])
 
@@ -198,7 +245,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
   }
 
   const selectRow = (index: number) => {
-    if (suppressClickRef.current) return
+    if (Date.now() < suppressClickUntilRef.current) return
     setSelectedIndex(current => current === index ? null : index)
   }
 
@@ -234,7 +281,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
       <section className={`plan-section routine-set ${activeGroup.key.startsWith('main-') ? 'main-set' : ''}`}>
         <div className="section-heading">
           <div><h2>{activeGroup.label.replace('Main circuit — ', '')}</h2><small>{activeGroup.note}</small></div>
-          <div className="plan-heading-actions"><span className="drag-instruction">↕ Hold a row number 1 second, then drag to reorder</span><button className="add-exercise-button" onClick={toggleAddExercise} aria-expanded={addingToGroupKey === activeGroup.key}>+ Add exercise</button></div>
+          <div className="plan-heading-actions"><span className="drag-instruction">↕ Hold any row 1 second, then drag to reorder</span><button className="add-exercise-button" onClick={toggleAddExercise} aria-expanded={addingToGroupKey === activeGroup.key}>+ Add exercise</button></div>
         </div>
         {addingToGroupKey === activeGroup.key && <section className="exercise-picker" aria-label={`Add exercise to ${activeGroup.label}`}>
           <header><div><strong>Add an exercise</strong><small>{activeGroup.key.startsWith('main-') ? 'It will be added to every main set.' : `It will be added to ${activeGroup.label}.`}</small></div><button onClick={toggleAddExercise} aria-label="Close exercise picker">×</button></header>
@@ -265,6 +312,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
               aria-roledescription="draggable exercise"
               aria-grabbed={Boolean(isDragging && drag?.activated)}
               onPointerDown={event => beginDrag(event, index)}
+              onTouchStart={event => beginTouchDrag(event, index)}
               onClick={() => selectRow(index)}
               onKeyDown={event => keyboardRowAction(event, activeGroup, index)}
               style={transform ? { transform } : undefined}

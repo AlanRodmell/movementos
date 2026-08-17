@@ -278,9 +278,8 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
           <button className="inspector-close" onClick={closeInspector} aria-label="Close exercise details">×</button>
         </header>
         <div className="inspector-details">
-          <details><summary><span className="inspector-symbol">?</span><strong>Why</strong><b aria-hidden="true">›</b></summary><p><small>{selectedEntry.rationale}</small></p></details>
-          <details><summary><span className="inspector-symbol">◌</span><strong>How</strong><b aria-hidden="true">›</b></summary><p><small>{selectedExercise.description}</small></p></details>
-          <details><summary><span className="inspector-symbol">▥</span><strong>Focus</strong><b aria-hidden="true">›</b></summary><p><small>{[...selectedExercise.primaryMuscles, ...selectedExercise.secondaryMuscles].slice(0,4).map(pretty).join(', ')}</small></p></details>
+          <p className="inspector-focus"><strong>Focus</strong><span>{[...selectedExercise.primaryMuscles, ...selectedExercise.secondaryMuscles].slice(0,4).map(pretty).join(' · ')}</span></p>
+          <p className="inspector-description">{selectedExercise.description.trim() || 'See video on the link below for more info'}</p>
           <a href={exerciseVideoUrl(selectedExercise)} target="_blank" rel="noopener noreferrer"><span className="inspector-symbol">▶</span><p><strong>Watch video</strong><small>See movement demonstration</small></p><b>›</b></a>
         </div>
         <div className="inspector-actions" aria-label={`Adjust ${selectedExercise.name}`}>

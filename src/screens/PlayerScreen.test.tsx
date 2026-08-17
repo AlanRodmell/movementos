@@ -82,3 +82,18 @@ it('sounds a cue for each of the final five exercise seconds',()=>{
   Object.defineProperty(window,'AudioContext',{configurable:true,value:originalAudioContext})
   vi.useRealTimers()
 })
+
+it('collects optional grouped exercise feedback before the overall rating',()=>{
+  const startedAt=Date.now()
+  const plan:WorkoutPlan={id:'review',name:'Review',intention:'train',goal:'strength',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['upper_body'],insights:[],exercises:[{exerciseId:'x001',prescription:'10 reps',durationSeconds:30,rationale:'Press slot',section:'Main work',setNumber:1,totalSets:1,slotKey:'horizontal-push'}]}
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:30,running:false,deadlineAt:null,startedAt,completedExerciseIds:[],actions:[]}
+  const onComplete=vi.fn()
+  render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={onComplete} onExit={vi.fn()}/>)
+  fireEvent.click(screen.getByRole('button',{name:/complete session/i}))
+  expect(screen.getByRole('heading',{name:'How did each movement fit?'})).toBeInTheDocument()
+  expect(screen.getByText(/1\/1 completed/)).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button',{name:'Good fit'}))
+  fireEvent.click(screen.getByRole('button',{name:/continue to overall rating/i}))
+  fireEvent.click(screen.getByRole('button',{name:/good/i}))
+  expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({rating:'good',exercises:[expect.objectContaining({id:'x001',feedback:'good_fit',completedAppearances:1})],actions:[expect.objectContaining({type:'completed'})]}))
+})

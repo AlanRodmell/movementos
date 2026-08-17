@@ -27,7 +27,7 @@ describe('workout engine', () => {
   })
 
   it('removes movements that load an active flare-up', () => {
-    const state = { ...defaultState, issues: [{ id:'issue', area:'chest' as const, severity:'flare' as const, status:'active' as const, note:'', createdAt:new Date().toISOString(), side:'bilateral' as const, resolvedAt:null }] }
+    const state = { ...defaultState, issues: [{ id:'issue', area:'chest' as const, severity:'flare' as const, status:'active' as const, note:'', createdAt:new Date().toISOString(), side:'bilateral' as const, resolvedAt:null }],learningModel:{...defaultState.learningModel,exercises:{x001:{exposures:20,completedAppearances:20,skips:0,swapsOut:0,swapsIn:0,positiveFeedback:20,tooEasy:0,tooHard:0,discomfort:0,negativePreference:0,easierSelections:0,harderSelections:0,lastSelectedAt:null,lastCompletedAt:null,preference:1,difficultySuitability:1,completionReliability:1,evidence:40,contexts:{},successfulPerformances:20,progressionStatus:'ready' as const,progressionEvidenceAt:0}}} }
     const plan = generateWorkout(preferences, state, 'injury-seed')
     expect(plan.exercises.map(item => exerciseById.get(item.exerciseId)!).every(exercise => ![...exercise.primaryMuscles,...exercise.secondaryMuscles].includes('chest'))).toBe(true)
   })
@@ -139,6 +139,24 @@ describe('workout engine', () => {
     expect([...families].some(family=>family==='knee'||family==='lunge')).toBe(true)
     expect(families).toContain('hinge')
     expect([...families].some(family=>family.startsWith('core_')||family==='carry')).toBe(true)
+    expect(plan.balanceReport?.valid).toBe(true)
+    expect(plan.balanceReport?.requiredRoles).toEqual(['horizontal_push','horizontal_pull','squat','hinge','anti_extension'])
+  })
+
+  it('uses distinct data-driven goal templates',()=>{
+    const common={...preferences,focusAreas:['full_body' as const],exercisesPerRound:5 as const,targetSets:1 as const}
+    const strength=generateWorkout({...common,goal:'strength' as const},defaultState,'goal-strength')
+    const muscle=generateWorkout({...common,goal:'muscle' as const},defaultState,'goal-muscle')
+    expect(strength.balanceReport?.requiredRoles).toContain('hinge')
+    expect(muscle.balanceReport?.requiredRoles).toContain('rotation')
+    expect(strength.balanceReport?.requiredRoles).not.toEqual(muscle.balanceReport?.requiredRoles)
+  })
+
+  it('stores required and covered body areas in the balance report',()=>{
+    const plan=generateWorkout({...preferences,focusAreas:['upper_body' as const],exercisesPerRound:3,targetSets:1},defaultState,'upper-report')
+    expect(plan.balanceReport?.requiredAreas).toEqual(['upper_body'])
+    expect(plan.balanceReport?.coveredAreas).toContain('upper_body')
+    expect(plan.balanceReport?.issues.some(issue=>issue.includes('upper body'))).toBe(false)
   })
 
   it('uses one coherent circuit order across every generated set',()=>{

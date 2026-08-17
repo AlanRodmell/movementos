@@ -65,6 +65,17 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
   fireEvent.click(rows[0])
   expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
 
+  const touchRow=rows[1]
+  fireEvent.pointerDown(touchRow,{pointerId:8,button:0,pointerType:'touch',clientX:10,clientY:10})
+  act(()=>vi.advanceTimersByTime(1000))
+  expect(touchRow).toHaveAttribute('aria-grabbed','false')
+  fireEvent.pointerDown(touchRow.querySelector('.exercise-position')!,{pointerId:9,button:0,pointerType:'touch',clientX:10,clientY:10})
+  act(()=>vi.advanceTimersByTime(1000))
+  expect(touchRow).toHaveAttribute('aria-grabbed','true')
+  fireEvent.pointerMove(window,{pointerId:9,pointerType:'touch',clientX:10,clientY:2})
+  fireEvent.pointerUp(window,{pointerId:9,pointerType:'touch',clientX:10,clientY:2})
+  expect(onReorder).toHaveBeenLastCalledWith(firstSetIndexes[1],firstSetIndexes[0])
+
   fireEvent.keyDown(rows[0], { key:'Enter' })
   const inspector = screen.getByRole('complementary', { name:/details$/i })
   expect(inspector).not.toHaveTextContent(/Why/i)

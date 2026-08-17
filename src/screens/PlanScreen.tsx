@@ -105,8 +105,11 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
   useEffect(() => clearHoldTimer, [])
 
   const beginDrag = (event: ReactPointerEvent<HTMLDivElement>, index: number) => {
-    if (event.button !== 0 || (event.target as HTMLElement).closest('button,a,input,select,textarea')) return
+    const target = event.target as HTMLElement
+    if (event.button !== 0 || target.closest('button,a,input,select,textarea')) return
+    if (event.pointerType === 'touch' && !target.closest('.exercise-position')) return
     event.currentTarget.focus()
+    event.currentTarget.setPointerCapture?.(event.pointerId)
     const pointerId = event.pointerId
     updateDrag({
       fromIndex:index,
@@ -231,7 +234,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
       <section className={`plan-section routine-set ${activeGroup.key.startsWith('main-') ? 'main-set' : ''}`}>
         <div className="section-heading">
           <div><h2>{activeGroup.label.replace('Main circuit — ', '')}</h2><small>{activeGroup.note}</small></div>
-          <div className="plan-heading-actions"><span className="drag-instruction">↕ Hold 1 second, then drag to reorder</span><button className="add-exercise-button" onClick={toggleAddExercise} aria-expanded={addingToGroupKey === activeGroup.key}>+ Add exercise</button></div>
+          <div className="plan-heading-actions"><span className="drag-instruction">↕ Hold a row number 1 second, then drag to reorder</span><button className="add-exercise-button" onClick={toggleAddExercise} aria-expanded={addingToGroupKey === activeGroup.key}>+ Add exercise</button></div>
         </div>
         {addingToGroupKey === activeGroup.key && <section className="exercise-picker" aria-label={`Add exercise to ${activeGroup.label}`}>
           <header><div><strong>Add an exercise</strong><small>{activeGroup.key.startsWith('main-') ? 'It will be added to every main set.' : `It will be added to ${activeGroup.label}.`}</small></div><button onClick={toggleAddExercise} aria-label="Close exercise picker">×</button></header>
@@ -266,7 +269,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
               onKeyDown={event => keyboardRowAction(event, activeGroup, index)}
               style={transform ? { transform } : undefined}
             >
-              <span className="exercise-position">{position + 1}</span>
+              <span className="exercise-position" title="Hold to drag">{position + 1}</span>
               <span className="exercise-dot" aria-hidden="true"/>
               <div className="plan-exercise-name"><strong>{exercise.name}</strong><span className="level-badge">L{exercise.level}</span>{item.scaled === 'up' && <span className="harder-badge">Harder</span>}{item.scaled === 'down' && <span className="easier-badge">Easier</span>}</div>
               <span className="plan-dose">{item.prescription}</span>

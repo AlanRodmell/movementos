@@ -154,7 +154,7 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .plan-exercise.drop-target::after { content:''; position:absolute; z-index:9; left:12px; right:12px; bottom:-6px; height:3px; border-radius:999px; background:var(--blue); box-shadow:0 0 0 4px rgba(8,101,237,.1); }
 .plan-exercise.scaled-up { border-color:#d55a64; background:#fff7f8; }
 .plan-exercise.scaled-down { border-color:#58a978; background:#f5fbf7; }
-.exercise-position { width:38px; height:38px; display:grid; place-items:center; border-radius:10px; background:var(--blue-soft); color:var(--blue-deep); font-size:1rem; font-weight:900; }
+.exercise-position { width:38px; height:38px; display:grid; place-items:center; border-radius:10px; background:var(--blue-soft); color:var(--blue-deep); font-size:1rem; font-weight:900; cursor:grab; touch-action:none; }
 .exercise-dot { width:11px; height:11px; border-radius:50%; background:var(--blue); box-shadow:0 0 0 5px rgba(8,101,237,.08); }
 .plan-exercise-name { min-width:0; display:flex; align-items:center; gap:7px; }
 .plan-exercise-name > strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.82rem; }
@@ -324,7 +324,7 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .player-actions { display:grid; gap:12px; }
 .player-actions > div { display:flex; gap:10px; }
 .player-actions > div > * { flex:1; background:#0d4488; border-color:#4b7eb7; color:white; }
-.player-exit { position:static; transform:none; width:100%; color:#dceaff; background:transparent; border-color:#4b7eb7; box-shadow:none; }
+.player-exit { position:static; transform:none; width:100%; min-height:48px; border:1px solid #4b7eb7; border-radius:15px; color:#dceaff; background:transparent; box-shadow:none; font-weight:800; }
 .finish-screen { align-items:center; justify-content:center; text-align:center; }
 .finish-symbol { width:92px; height:92px; display:grid; place-items:center; border-radius:50%; background:var(--lime); color:var(--ink); font-size:3rem; margin-bottom:28px; }
 .finish-screen .eyebrow { color:#9bcbff; }

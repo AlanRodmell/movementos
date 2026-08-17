@@ -83,6 +83,47 @@ it('sounds a cue for each of the final five exercise seconds',()=>{
   vi.useRealTimers()
 })
 
+it('sounds a five-second countdown through the end of a rest phase',()=>{
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-08-16T10:00:00Z'))
+  const frequencies:number[]=[]
+  class MockAudioContext {
+    currentTime=0
+    destination={}
+    createOscillator(){return{frequency:{set value(value:number){frequencies.push(value)}},connect:vi.fn(),start:vi.fn(),stop:vi.fn()}}
+    createGain(){return{gain:{value:0},connect:vi.fn()}}
+  }
+  const originalAudioContext=window.AudioContext
+  Object.defineProperty(window,'AudioContext',{configurable:true,value:MockAudioContext})
+  const startedAt=Date.now()
+  const plan:WorkoutPlan={
+    id:'rest-audio-countdown',name:'Rest audio countdown',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['full_body'],insights:[],
+    exercises:[
+      {exerciseId:'x001',prescription:'10 reps',durationSeconds:10,rationale:'First',section:'Main work'},
+      {exerciseId:'x002',prescription:'10 reps',durationSeconds:10,rationale:'Second',section:'Main work'},
+    ],
+  }
+  const session:ActiveSession={plan,index:0,phase:'rest',remainingSeconds:6,running:true,deadlineAt:startedAt+6000,startedAt,completedExerciseIds:['x001']}
+
+  render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+  expect(frequencies).toHaveLength(0)
+  for(let second=0;second<5;second+=1)act(()=>vi.advanceTimersByTime(1000))
+  expect(frequencies).toEqual([660,660,660,660,660])
+  act(()=>vi.advanceTimersByTime(1000))
+  expect(frequencies.at(-1)).toBe(880)
+
+  Object.defineProperty(window,'AudioContext',{configurable:true,value:originalAudioContext})
+  vi.useRealTimers()
+})
+
+it('keeps the player exit action independent from the light shell back-button style',()=>{
+  const plan:WorkoutPlan={id:'exit-style',name:'Exit style',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['full_body'],insights:[],exercises:[{exerciseId:'x001',prescription:'10 reps',durationSeconds:10,rationale:'Test',section:'Main work'}]}
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:10,running:false,deadlineAt:null,startedAt:Date.now(),completedExerciseIds:[]}
+  render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+  expect(screen.getByRole('button',{name:/end session/i})).toHaveClass('player-exit')
+  expect(screen.getByRole('button',{name:/end session/i})).not.toHaveClass('bottom-back')
+})
+
 it('collects optional grouped exercise feedback before the overall rating',()=>{
   const startedAt=Date.now()
   const plan:WorkoutPlan={id:'review',name:'Review',intention:'train',goal:'strength',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['upper_body'],insights:[],exercises:[{exerciseId:'x001',prescription:'10 reps',durationSeconds:30,rationale:'Press slot',section:'Main work',setNumber:1,totalSets:1,slotKey:'horizontal-push'}]}

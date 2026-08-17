@@ -16,3 +16,13 @@ it('renders readable learning evidence and progression controls',()=>{
   expect(screen.getByText('Good fit')).toBeInTheDocument()
   expect(screen.queryByText(/preference.*0\.4/i)).not.toBeInTheDocument()
 })
+
+it('offers undo for an accepted progression',()=>{
+  const recommendation={id:'accepted',exerciseId:'x001',category:'variation' as const,status:'accepted' as const,title:'Try Dumbbell Bench Press',evidence:['Completed successfully 4 times'],createdAt:'2026-08-17T10:00:00.000Z',fromExerciseId:'x001',toExerciseId:'x002'}
+  const entry={...emptyLearningEntry(),evidence:12,successfulPerformances:4,progressionStatus:'accepted' as const,currentExerciseId:'x002',previousExerciseId:'x001'}
+  const state={...defaultState,learningModel:{...defaultState.learningModel,exercises:{x001:entry},recommendations:[recommendation]}}
+  const onUndoProgression=vi.fn()
+  render(<ProgressScreen state={state} onUndoProgression={onUndoProgression}/>)
+  fireEvent.click(screen.getByRole('button',{name:'Undo progression'}))
+  expect(onUndoProgression).toHaveBeenCalledWith(recommendation)
+})

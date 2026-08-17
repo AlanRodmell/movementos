@@ -1,6 +1,6 @@
 import { defaultState } from '../storage/state'
 import type { AppState, Exercise, ExerciseFeedback, WorkoutAction, WorkoutSession } from './types'
-import { applyLearningFromSession, emptyLearningEntry, emptyLearningModel, getProgressionRecommendations, normaliseLearningModel, respondToProgression } from './learning'
+import { applyLearningFromSession, emptyLearningEntry, emptyLearningModel, getProgressionRecommendations, normaliseLearningModel, respondToProgression, revertProgression } from './learning'
 
 const action=(type:WorkoutAction['type'],exerciseId='x001'):WorkoutAction=>({id:`a_${type}`,type,exerciseId,occurrenceIndex:0,at:'2026-08-17T10:00:00.000Z',context:{key:'strength|train|Main work|horizontal-push|upper_body',goal:'strength',intention:'train',section:'Main work',role:'horizontal_push',focusArea:'upper_body'}})
 const session=(feedback?:ExerciseFeedback,actions:WorkoutAction[]=[] ,id='x001',performance?:WorkoutSession['exercises'][number]['performance']):WorkoutSession=>({id:`s_${feedback??'none'}_${actions.map(item=>item.type).join('_')}`,planName:'Test',date:'2026-08-17T10:00:00.000Z',durationSeconds:60,intention:'train',goal:'strength',rating:'good',completedExerciseIds:[id],exercises:[{id,name:'Exercise',prescription:'10 reps',durationSeconds:30,plannedAppearances:1,completedAppearances:1,feedback,performance}],focus:['upper_body'],areaLoadBefore:{},actions:[action('completed',id),...actions]})
@@ -51,7 +51,12 @@ describe('local learning model',()=>{
     expect(state.learningModel.exercises.x001.currentExerciseId).toBeUndefined()
     const recommendation=getProgressionRecommendations(state)[0]
     expect(recommendation.status).toBe('ready')
-    expect(respondToProgression(state,recommendation,'accept').learningModel.exercises.x001.currentExerciseId).toBe('x002')
+    const accepted=respondToProgression(state,recommendation,'accept')
+    expect(accepted.learningModel.exercises.x001.currentExerciseId).toBe('x002')
+    const reverted=revertProgression(accepted,accepted.learningModel.recommendations[0])
+    expect(reverted.learningModel.exercises.x001.currentExerciseId).toBeUndefined()
+    expect(reverted.learningModel.exercises.x001.progressionStatus).toBe('deferred')
+    expect(reverted.learningModel.events[0].type).toBe('progression_reverted')
     expect(respondToProgression(state,recommendation,'keep').learningModel.recommendations[0].status).toBe('kept')
     expect(respondToProgression(state,recommendation,'defer').learningModel.recommendations[0].availableAfter).toBeTruthy()
   })
@@ -64,6 +69,9 @@ describe('local learning model',()=>{
     model=applyLearningFromSession(model,session('good_fit',[],'u_weighted',{load:20,loadUnit:'kg'}))
     const withLoad=getProgressionRecommendations({...defaultState,customExercises:[custom],profile:{...defaultState.profile,equipment:['none','dumbbells']},learningModel:model})[0]
     expect(withLoad.category).toBe('load');expect(withLoad.load).toBeGreaterThan(20)
+    const accepted=respondToProgression({...defaultState,customExercises:[custom],profile:{...defaultState.profile,equipment:['none','dumbbells']},learningModel:model},withLoad,'accept')
+    expect(accepted.learningModel.exercises.u_weighted.previousPrescription).toBe('8 reps')
+    expect(revertProgression(accepted,accepted.learningModel.recommendations[0]).learningModel.exercises.u_weighted.currentPrescription).toBe('8 reps')
   })
 
   it('decays stale preference before applying new evidence',()=>{

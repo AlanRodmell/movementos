@@ -97,3 +97,18 @@ it('collects optional grouped exercise feedback before the overall rating',()=>{
   fireEvent.click(screen.getByRole('button',{name:/good/i}))
   expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({rating:'good',exercises:[expect.objectContaining({id:'x001',feedback:'good_fit',completedAppearances:1})],actions:[expect.objectContaining({type:'completed'})]}))
 })
+
+it('offers an explicit issue after discomfort without diagnosing an injury',()=>{
+  const plan:WorkoutPlan={id:'discomfort',name:'Discomfort',intention:'train',goal:'strength',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['upper_body'],insights:[],exercises:[{exerciseId:'x001',prescription:'10 reps',durationSeconds:30,rationale:'Press',section:'Main work'}]}
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:30,running:false,deadlineAt:null,startedAt:Date.now(),completedExerciseIds:[],actions:[]}
+  const onCreateIssue=vi.fn()
+  render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onCreateIssue={onCreateIssue} onExit={vi.fn()}/>)
+  fireEvent.click(screen.getByRole('button',{name:/complete session/i}))
+  fireEvent.click(screen.getByRole('button',{name:'Discomfort'}))
+  expect(screen.getByText(/does not diagnose an injury/i)).toBeInTheDocument()
+  fireEvent.change(screen.getByRole('combobox',{name:/issue severity/i}),{target:{value:'moderate'}})
+  fireEvent.change(screen.getByRole('combobox',{name:/issue side/i}),{target:{value:'left'}})
+  fireEvent.click(screen.getByRole('button',{name:'Add issue'}))
+  expect(onCreateIssue).toHaveBeenCalledWith(expect.any(String),'moderate','left',expect.stringContaining('Dumbbell Floor Press'))
+  expect(screen.getByRole('button',{name:'Issue added'})).toBeDisabled()
+})

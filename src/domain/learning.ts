@@ -174,14 +174,25 @@ export function getProgressionRecommendations(state:AppState){
 export function respondToProgression(state:AppState,recommendation:ProgressionRecommendation,response:'accept'|'keep'|'defer'):AppState{
   const at=new Date().toISOString();const entry=state.learningModel.exercises[recommendation.exerciseId]??emptyLearningEntry()
   const status:ProgressionRecommendation['status']=response==='accept'?'accepted':response==='keep'?'kept':'deferred';const updatedRecommendation:ProgressionRecommendation={...recommendation,status,availableAfter:response==='defer'?new Date(Date.now()+14*86400000).toISOString():undefined}
-  const loadPrescription=recommendation.category==='load'&&recommendation.load?`${recommendation.load} ${recommendation.loadUnit??'kg'} · ${entry.currentPrescription??recommendation.previousPrescription??''}`.trim():undefined
+  const basePrescription=entry.currentPrescription??recommendation.previousPrescription??allExercises(state).find(exercise=>exercise.id===recommendation.exerciseId)?.prescription
+  const loadPrescription=recommendation.category==='load'&&recommendation.load?`${recommendation.load} ${recommendation.loadUnit??'kg'} · ${basePrescription??''}`.trim():undefined
+  const acceptedPrescription=recommendation.prescription??loadPrescription
   const updatedEntry:ExerciseLearningEntry={...entry,progressionStatus:status,progressionEvidenceAt:entry.evidence,deferredUntil:updatedRecommendation.availableAfter,
-    previousPrescription:response==='accept'&&recommendation.prescription?entry.currentPrescription??recommendation.previousPrescription:entry.previousPrescription,
-    currentPrescription:response==='accept'?(recommendation.prescription??loadPrescription??entry.currentPrescription):entry.currentPrescription,
+    previousPrescription:response==='accept'&&acceptedPrescription?basePrescription:entry.previousPrescription,
+    currentPrescription:response==='accept'?(acceptedPrescription??entry.currentPrescription):entry.currentPrescription,
     previousExerciseId:response==='accept'&&recommendation.toExerciseId?recommendation.fromExerciseId:entry.previousExerciseId,
     currentExerciseId:response==='accept'&&recommendation.toExerciseId?recommendation.toExerciseId:entry.currentExerciseId}
   const type=response==='accept'?'progression_accepted':response==='keep'?'progression_kept':'progression_deferred'
   return{...state,learningModel:{...state.learningModel,exercises:{...state.learningModel.exercises,[recommendation.exerciseId]:updatedEntry},recommendations:[updatedRecommendation,...state.learningModel.recommendations.filter(item=>item.id!==recommendation.id)].slice(0,100),events:[event(type,`${response==='accept'?'Accepted':response==='keep'?'Kept current level for':'Deferred'} ${recommendation.title}`,at,recommendation.exerciseId),...state.learningModel.events].slice(0,MAX_LEARNING_EVENTS)}}
+}
+
+export function revertProgression(state:AppState,recommendation:ProgressionRecommendation):AppState{
+  if(recommendation.status!=='accepted')return state
+  const at=new Date().toISOString();const entry=state.learningModel.exercises[recommendation.exerciseId]
+  if(!entry)return state
+  const deferredUntil=new Date(Date.now()+14*86400000).toISOString()
+  const restored:ExerciseLearningEntry={...entry,progressionStatus:'deferred',deferredUntil,currentPrescription:entry.previousPrescription,currentExerciseId:undefined,previousPrescription:undefined,previousExerciseId:undefined}
+  return{...state,learningModel:{...state.learningModel,exercises:{...state.learningModel.exercises,[recommendation.exerciseId]:restored},recommendations:state.learningModel.recommendations.filter(item=>item.id!==recommendation.id),events:[event('progression_reverted',`Reverted ${recommendation.title}`,at,recommendation.exerciseId),...state.learningModel.events].slice(0,MAX_LEARNING_EVENTS)}}
 }
 
 export function confidenceLabel(evidence:number){return evidence>=12?'Established':evidence>=4?'Learning':'New'}

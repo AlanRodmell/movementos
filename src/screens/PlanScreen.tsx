@@ -213,7 +213,6 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
       <div className="plan-title-block"><span className="eyebrow">YOUR SESSION</span><h1>{plan.name}</h1></div>
       <div className="plan-fact"><span>◎</span><div><strong>{pretty(plan.goal)}</strong><small>Focus</small></div></div>
       <div className="plan-fact"><span>◷</span><div><strong>{plan.durationMinutes} min</strong><small>Est. duration</small></div></div>
-      <button className="primary plan-start" onClick={onStart}>Start session <span>→</span></button>
     </section>
 
     <nav className="routine-map" aria-label="Routine structure">
@@ -299,6 +298,6 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
 
     <details className="algorithm-note"><summary><span>✦</span><strong>Why this session?</strong></summary><p>{plan.insights.join(' ')}</p></details>
     {isSaved&&<div className="save-confirmation" role="status">✓ Workout saved on this device</div>}
-    <div className="plan-footer-actions"><button className="secondary" onClick={onRegenerate}>Regenerate</button><button className={`secondary ${isSaved?'saved':''}`} onClick={isSaved?onViewSaved:onSave}>{isSaved?'View saved':'Save workout'}</button><button className="primary plan-footer-start" onClick={onStart}>Start workout <span>→</span></button></div>
+    <div className="plan-footer-actions"><button className="secondary" onClick={onRegenerate}>Regenerate</button><button className={`secondary ${isSaved?'saved':''}`} onClick={isSaved?onViewSaved:onSave}>{isSaved?'View saved':'Save workout'}</button><button className="primary plan-footer-start" onClick={onStart}>Start session <span>→</span></button></div>
   </div>
 }

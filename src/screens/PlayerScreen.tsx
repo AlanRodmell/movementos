@@ -74,14 +74,16 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   },[completed,finished,index,onProgress,phase,plan,remaining,running,session.startedAt])
 
   useEffect(()=>{
-    if(remaining!==0||!running||!soundEnabled)return
+    const isExerciseCountdown=phase==='work'||phase==='switch_sides'
+    const isFinalExerciseCountdown=remaining>=1&&remaining<=5&&isExerciseCountdown
+    if((remaining!==0&&!isFinalExerciseCountdown)||!running||!soundEnabled)return
     try{
       const AudioContextClass=window.AudioContext||(window as typeof window&{webkitAudioContext?:typeof AudioContext}).webkitAudioContext
       if(!AudioContextClass)return
       const context=new AudioContextClass();const oscillator=context.createOscillator();const gain=context.createGain()
-      oscillator.frequency.value=660;gain.gain.value=.08;oscillator.connect(gain);gain.connect(context.destination);oscillator.start();oscillator.stop(context.currentTime+.12)
+      oscillator.frequency.value=remaining===0?880:660;gain.gain.value=.08;oscillator.connect(gain);gain.connect(context.destination);oscillator.start();oscillator.stop(context.currentTime+(remaining===0?.18:.1))
     }catch{/* Audio may be blocked until interaction. */}
-  },[remaining,running,soundEnabled])
+  },[phase,remaining,running,soundEnabled])
 
   const pause=()=>{
     if(running){setRemaining(Math.max(0,Math.ceil((deadline.current-Date.now())/1000)));setRunning(false)}

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
 import { generateWorkout } from '../domain/engine'
 import { defaultState } from '../storage/state'
 import { PlanScreen } from './PlanScreen'
@@ -43,7 +43,9 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
   expect(onReorder).toHaveBeenCalledWith(firstSetIndexes[0], firstSetIndexes[1])
 
   onReorder.mockClear()
-  fireEvent.pointerDown(rows[0], { pointerId:6, button:0, clientX:10, clientY:10 })
+  const briefPress = createEvent.pointerDown(rows[0], { pointerId:6, button:0, clientX:10, clientY:10 })
+  fireEvent(rows[0], briefPress)
+  expect(briefPress.defaultPrevented).toBe(false)
   fireEvent.pointerMove(window, { pointerId:6, clientX:10, clientY:19 })
   fireEvent.pointerUp(window, { pointerId:6, clientX:10, clientY:19 })
   act(()=>vi.advanceTimersByTime(1000))
@@ -67,6 +69,8 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
   fireEvent.change(screen.getByRole('searchbox', { name:'Search exercises to add' }), { target:{ value:'Dumbbell Floor Press' } })
   fireEvent.click(screen.getByRole('button', { name:/Dumbbell Floor Press/i }))
   expect(onAdd).toHaveBeenCalledWith(firstSetIndexes[firstSetIndexes.length - 1], 'x001')
+  fireEvent.click(screen.getByRole('button', { name:/^Start workout/ }))
+  expect(noop).toHaveBeenCalledOnce()
   vi.useRealTimers()
 })
 

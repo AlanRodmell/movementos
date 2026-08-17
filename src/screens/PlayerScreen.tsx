@@ -87,9 +87,9 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   },[actions,completed,finished,index,onProgress,phase,plan,remaining,running,session.startedAt])
 
   useEffect(()=>{
-    const isExerciseCountdown=phase==='work'||phase==='switch_sides'
-    const isFinalExerciseCountdown=remaining>=1&&remaining<=5&&isExerciseCountdown
-    if((remaining!==0&&!isFinalExerciseCountdown)||!running||!soundEnabled)return
+    const isCountdownPhase=phase==='work'||phase==='switch_sides'||phase==='rest'
+    const isFinalCountdown=remaining>=1&&remaining<=5&&isCountdownPhase
+    if((remaining!==0&&!isFinalCountdown)||!running||!soundEnabled)return
     try{
       const AudioContextClass=window.AudioContext||(window as typeof window&{webkitAudioContext?:typeof AudioContext}).webkitAudioContext
       if(!AudioContextClass)return
@@ -127,7 +127,7 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
     id:`session_${Date.now()}`,planName:plan.name,date:new Date().toISOString(),durationSeconds:Math.max(1,Math.round((Date.now()-session.startedAt)/1000)),intention:plan.intention,goal:plan.goal,rating,
     completedExerciseIds:completed,exercises:reviewRows(),focus:plan.focusAreas,areaLoadBefore,actions,balanceReport:plan.balanceReport,
   })
-  const exitButton=<button className="bottom-back player-exit" onClick={()=>confirm('End this session without saving?')&&onExit()}>← End session</button>
+  const exitButton=<button className="player-exit" onClick={()=>confirm('End this session without saving?')&&onExit()}>← End session</button>
 
   if(finished&&!ratingStage)return <div className="player-screen workout-review">
     <span className="eyebrow">SESSION REVIEW</span><h1>How did each movement fit?</h1><p>Optional feedback helps tune future sessions. Repeated sets are grouped together.</p>

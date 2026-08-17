@@ -61,17 +61,14 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
 
   fireEvent.keyDown(rows[0], { key:'Enter' })
   const inspector = screen.getByRole('complementary', { name:/details$/i })
-  expect(inspector).toHaveTextContent(/Why/i)
+  expect(inspector).not.toHaveTextContent(/Why/i)
+  expect(inspector).not.toHaveTextContent(/How/i)
   expect(inspector).toHaveTextContent(/Easier/i)
   const selectedItem=plan.exercises[firstSetIndexes[0]]
   const selectedExercise=exerciseById.get(selectedItem.exerciseId)!
-  expect(inspector).toHaveTextContent(selectedItem.rationale)
   expect(inspector).toHaveTextContent(selectedExercise.description)
   expect(inspector).toHaveTextContent(new RegExp(selectedExercise.primaryMuscles[0].replaceAll('_',' '),'i'))
-  const whySummary=screen.getByText('Why').closest('summary')!
-  expect(whySummary.closest('details')).not.toHaveAttribute('open')
-  fireEvent.click(whySummary)
-  expect(whySummary.closest('details')).toHaveAttribute('open')
+  expect(within(inspector).getByText('Focus').closest('p')).toHaveClass('inspector-focus')
   expect(screen.getByRole('link',{name:/watch video/i}).getAttribute('href')).toContain('youtube.com')
 
   fireEvent.click(screen.getByRole('button', { name:'Close exercise details' }))
@@ -84,6 +81,22 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
   fireEvent.click(screen.getByRole('button', { name:/^Start session/ }))
   expect(noop).toHaveBeenCalledOnce()
   vi.useRealTimers()
+})
+
+it('uses helpful copy when an exercise description is blank',()=>{
+  const generated=generateWorkout({
+    intention:'train',goal:'strength',durationMinutes:30,focusAreas:['full_body'],equipment:defaultState.profile.equipment,
+    level:2,includeConditioning:false,includeWarmup:false,exercisesPerRound:3,targetSets:2,recoveryModes:['mobility','stretching'],
+  },defaultState,'blank-description')
+  const firstMainIndex=generated.exercises.findIndex(item=>item.section==='Main work'&&item.setNumber===1)
+  const sourceExercise=exerciseById.get(generated.exercises[firstMainIndex].exerciseId)!
+  const customExercise={...sourceExercise,id:'custom_blank_description',name:'Custom movement',description:'   '}
+  const plan={...generated,exercises:generated.exercises.map((item,index)=>index===firstMainIndex?{...item,exerciseId:customExercise.id}:item)}
+  const noop=vi.fn()
+  render(<PlanScreen plan={plan} customExercises={[customExercise]} isSaved={false} onStart={noop} onSave={noop} onViewSaved={noop} onRegenerate={noop} onEasier={noop} onHarder={noop} onAdjust={noop} onSwap={noop} onReorder={noop} onAdd={noop} onRemove={noop} onAvoid={noop}/>)
+  const setOne=screen.getByRole('heading',{name:/Set 1 of/i}).closest('section')!
+  fireEvent.keyDown(within(setOne).getAllByRole('listitem')[0],{key:'Enter'})
+  expect(screen.getByRole('complementary',{name:/Custom movement details/i})).toHaveTextContent('See video on the link below for more info')
 })
 
 it('turns the save action into a saved-workout link after saving',()=>{

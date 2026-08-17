@@ -28,6 +28,15 @@ describe('state migration', () => {
     expect(stored.workoutHistory).toEqual([])
     expect(stored.savedWorkouts).toEqual([])
     expect(stored.customExercises).toEqual({})
+    expect(stored.learningModel).toEqual(defaultState.learningModel)
+  })
+
+  it('migrates missing learning data and round-trips learned evidence',()=>{
+    expect(normaliseState({schemaVersion:11}).learningModel).toEqual(defaultState.learningModel)
+    const source={...defaultState,learningModel:{...defaultState.learningModel,exercises:{x001:{exposures:2,completedAppearances:2,skips:0,swapsOut:0,swapsIn:0,positiveFeedback:1,tooEasy:0,tooHard:0,discomfort:0,negativePreference:0,easierSelections:0,harderSelections:0,lastSelectedAt:null,lastCompletedAt:null,preference:.4,difficultySuitability:0,completionReliability:.8,evidence:3,contexts:{},successfulPerformances:2,progressionStatus:'approaching' as const,progressionEvidenceAt:0}}}}
+    const restored=normaliseState(serializeLegacyState(source))
+    expect(restored.learningModel.exercises.x001.preference).toBe(.4)
+    expect(restored.learningModel.exercises.x001.progressionStatus).toBe('approaching')
   })
 
   it('round-trips saved workouts and custom exercises through the legacy format', () => {

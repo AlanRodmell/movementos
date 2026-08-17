@@ -1,4 +1,5 @@
 import type { ActiveSession, AppState, Category, Equipment, Exercise, ExerciseStat, Goal, Level, MuscleArea, WorkoutExercise, WorkoutPlan, WorkoutSession } from '../domain/types'
+import { emptyLearningModel, normaliseLearningModel } from '../domain/learning'
 
 export const STORAGE_KEY = 'movementos:state'
 // The external contract deliberately stays at v11 so legacy installs and backups remain compatible.
@@ -14,6 +15,7 @@ export const defaultState: AppState = {
   issues: [], history: [], savedPlans: [], customExercises: [], activeSession: null,
   dailyCheckIn:{ date:null, tightAreas:[], primaryArea:null }, exerciseStats:{}, rotation:{}, legacyHistory:{},
   recovery:{ upper:0, lower:0, core:0, conditioning:0 },
+  learningModel:emptyLearningModel(),
 }
 
 const goals: Goal[] = ['general','strength','muscle','endurance','mobility']
@@ -34,6 +36,9 @@ function migrateHistory(raw: Record<string, unknown>): WorkoutSession[] {
       return {
         id: safeText(exercise.id, '', 100), name: safeText(exercise.name ?? exercise.id, 'Exercise', 120),
         prescription: safeText(exercise.prescription ?? exercise.reps, '', 80), durationSeconds: Math.max(0, Number(exercise.durationSeconds ?? exercise.secs) || 0),
+        plannedAppearances:Math.max(0,Number(exercise.plannedAppearances)||0)||undefined,completedAppearances:Math.max(0,Number(exercise.completedAppearances)||0)||undefined,skippedAppearances:Math.max(0,Number(exercise.skippedAppearances)||0)||undefined,
+        adjusted:Boolean(exercise.adjusted),swapped:Boolean(exercise.swapped),feedback:['good_fit','too_easy','too_hard','discomfort','didnt_enjoy'].includes(String(exercise.feedback))?exercise.feedback as WorkoutSession['exercises'][number]['feedback']:undefined,
+        performance:exercise.performance&&typeof exercise.performance==='object'?exercise.performance as WorkoutSession['exercises'][number]['performance']:undefined,
       }
     }).filter(entry => entry.id)
     return {
@@ -47,6 +52,8 @@ function migrateHistory(raw: Record<string, unknown>): WorkoutSession[] {
       exercises: exerciseRows,
       focus: Array.isArray(session.focus) ? session.focus.map(value => safeArea(value)).slice(0,20) : [],
       areaLoadBefore: session.areaLoadBefore && typeof session.areaLoadBefore === 'object' ? session.areaLoadBefore as WorkoutSession['areaLoadBefore'] : {},
+      actions:Array.isArray(session.actions)?session.actions.filter(action=>action&&typeof action==='object').slice(0,500) as WorkoutSession['actions']:[],
+      balanceReport:session.balanceReport&&typeof session.balanceReport==='object'?session.balanceReport as WorkoutSession['balanceReport']:undefined,
     }
   })
 }
@@ -113,7 +120,7 @@ function planFromUnknown(value: unknown, fallbackId = 'plan_import'): WorkoutPla
     const heading = safeText(entry.section, 'Main work', 30)
     const section: WorkoutExercise['section'] = heading === 'Prepare' || heading === 'Condition' || heading === 'Restore' ? heading : 'Main work'
     const scaled:WorkoutExercise['scaled']=entry.scaled==='up'||entry.scaled==='down'?entry.scaled:null
-    return { exerciseId: safeText(entry.exerciseId ?? entry.id, '', 100), prescription: safeText(entry.prescription ?? entry.reps, '', 80), durationSeconds: Math.max(1, Math.min(3600, Number(entry.durationSeconds ?? entry.secs) || 30)), rationale: safeText(entry.rationale, 'Saved exercise', 200), section, adjusted:Boolean(entry.adjusted), scaled, originalLevel:Number(entry.originalLevel??entry.originalTier)||0, setNumber:Number(entry.setNumber)||undefined, totalSets:Number(entry.totalSets)||undefined }
+    return { exerciseId: safeText(entry.exerciseId ?? entry.id, '', 100), prescription: safeText(entry.prescription ?? entry.reps, '', 80), durationSeconds: Math.max(1, Math.min(3600, Number(entry.durationSeconds ?? entry.secs) || 30)), rationale: safeText(entry.rationale, 'Saved exercise', 200), section, adjusted:Boolean(entry.adjusted), scaled, originalLevel:Number(entry.originalLevel??entry.originalTier)||0, setNumber:Number(entry.setNumber)||undefined, totalSets:Number(entry.totalSets)||undefined,slotKey:safeText(entry.slotKey,'',80)||undefined,slotLabel:safeText(entry.slotLabel,'',120)||undefined }
   }).filter(item => item.exerciseId)
   if (!exercises.length) return null
   return {
@@ -124,6 +131,7 @@ function planFromUnknown(value: unknown, fallbackId = 'plan_import'): WorkoutPla
     createdAt: Number.isFinite(Date.parse(String(raw.createdAt))) ? new Date(String(raw.createdAt)).toISOString() : new Date(0).toISOString(), exercises,
     insights: Array.isArray(raw.insights) ? raw.insights.map(value => safeText(value, '', 200)).filter(Boolean).slice(0, 10) : ['Restored from your saved workout library.'],
     focusAreas: Array.isArray(raw.focusAreas) ? raw.focusAreas.map(value => safeArea(value)).slice(0, 20) : [],
+    balanceReport:raw.balanceReport&&typeof raw.balanceReport==='object'?raw.balanceReport as WorkoutPlan['balanceReport']:undefined,
   }
 }
 
@@ -136,7 +144,7 @@ function migrateActiveSession(value: unknown): ActiveSession | null {
   const phase:ActiveSession['phase']=['get_ready','work','switch_sides','waiting','rest'].includes(String(raw.phase)) ? raw.phase as ActiveSession['phase'] : 'work'
   const rawRemaining=Number(raw.remainingSeconds)
   const remainingSeconds=Number.isFinite(rawRemaining)&&rawRemaining>=0?rawRemaining:(phase==='get_ready'?5:phase==='rest'?15:plan.exercises[index].durationSeconds)
-  return { plan, index, phase, remainingSeconds, running: phase==='waiting'?false:Boolean(raw.running), deadlineAt: Number(raw.deadlineAt) || null, startedAt: Number(raw.startedAt) || Date.now(), completedExerciseIds: safeIds(raw.completedExerciseIds) }
+  return { plan, index, phase, remainingSeconds, running: phase==='waiting'?false:Boolean(raw.running), deadlineAt: Number(raw.deadlineAt) || null, startedAt: Number(raw.startedAt) || Date.now(), completedExerciseIds: safeIds(raw.completedExerciseIds),actions:Array.isArray(raw.actions)?raw.actions.filter(action=>action&&typeof action==='object').slice(0,500) as ActiveSession['actions']:[] }
 }
 
 export function normaliseState(value: unknown): AppState {
@@ -168,13 +176,14 @@ export function normaliseState(value: unknown): AppState {
     dailyCheckIn: raw.dailyCheckIn && typeof raw.dailyCheckIn === 'object' ? (() => { const check = raw.dailyCheckIn as Record<string,unknown>; return { date:check.date ? safeText(check.date,'',40) : null, tightAreas:Array.isArray(check.tightAreas) ? check.tightAreas.map(value => safeArea(value)).slice(0,30) : [], primaryArea:check.primaryArea ? safeArea(check.primaryArea) : null } })() : { date:null,tightAreas:[],primaryArea:null },
     exerciseStats, rotation:numericMap(raw.rotation), legacyHistory:numericMap(raw.history),
     recovery:{ upper:Number((raw.recovery as Record<string,unknown> | undefined)?.upper)||0, lower:Number((raw.recovery as Record<string,unknown> | undefined)?.lower)||0, core:Number((raw.recovery as Record<string,unknown> | undefined)?.core)||0, conditioning:Number((raw.recovery as Record<string,unknown> | undefined)?.conditioning)||0 },
+    learningModel:normaliseLearningModel(raw.learningModel),
   }
 }
 
 function legacyGroups(plan: WorkoutPlan) {
   return ['Prepare','Main work','Condition','Restore'].map(heading => ({
     heading,
-    items: plan.exercises.filter(item => item.section === heading).map((item,index) => ({ id:item.exerciseId, reps:item.prescription, secs:item.durationSeconds, adjusted:Boolean(item.adjusted), scaled:item.scaled??null, originalTier:item.originalLevel??0, setNumber:item.setNumber, totalSets:item.totalSets, ukey:`${item.exerciseId}_${index}` })),
+    items: plan.exercises.filter(item => item.section === heading).map((item,index) => ({ id:item.exerciseId, reps:item.prescription, secs:item.durationSeconds, adjusted:Boolean(item.adjusted), scaled:item.scaled??null, originalTier:item.originalLevel??0, setNumber:item.setNumber, totalSets:item.totalSets, slotKey:item.slotKey, slotLabel:item.slotLabel, ukey:`${item.exerciseId}_${index}` })),
   })).filter(group => group.items.length)
 }
 
@@ -188,10 +197,10 @@ export function serializeLegacyState(state: AppState) {
     schemaVersion: SCHEMA_VERSION, dailyCheckIn:state.dailyCheckIn,
     profile: { height:state.profile.height, weight:state.profile.weight, heightUnit:state.profile.heightUnit, weightUnit:state.profile.weightUnit, trainingGoal:state.profile.goal, upper:state.profile.upper, lower:state.profile.lower, core:state.profile.core, conditioning:state.profile.conditioning, unlocks:{ advancedBridges:state.profile.advancedBridges }, soundEnabled:state.profile.soundEnabled, waitBetweenExercises:state.profile.waitBetweenExercises, avoidList:state.profile.avoidList, alwaysInclude:state.profile.favourites, name:state.profile.name, level:state.profile.level, goal:state.profile.goal, equipment:state.profile.equipment, favourites:state.profile.favourites },
     rotation:state.rotation, history:state.legacyHistory,
-    workoutHistory: state.history.map(session => ({ id:session.id, date:session.date, name:session.planName, durationSeconds:session.durationSeconds, plannedExercises:session.exercises.length, completedExercises:session.completedExerciseIds.length, rating:session.rating, focus:session.focus, intention:session.intention === 'recover' ? 'recovery' : 'workout', goal:session.goal, completedExerciseIds:session.completedExerciseIds, exercises:session.exercises.map(exercise => ({ id:exercise.id, name:exercise.name, family:null, reps:exercise.prescription, detail:'', secs:exercise.durationSeconds })) , areaLoadBefore:session.areaLoadBefore })),
+    workoutHistory: state.history.map(session => ({ id:session.id, date:session.date, name:session.planName, durationSeconds:session.durationSeconds, plannedExercises:session.exercises.length, completedExercises:session.completedExerciseIds.length, rating:session.rating, focus:session.focus, intention:session.intention === 'recover' ? 'recovery' : 'workout', goal:session.goal, completedExerciseIds:session.completedExerciseIds, exercises:session.exercises.map(exercise => ({ id:exercise.id, name:exercise.name, family:null, reps:exercise.prescription, detail:'', secs:exercise.durationSeconds,plannedAppearances:exercise.plannedAppearances,completedAppearances:exercise.completedAppearances,skippedAppearances:exercise.skippedAppearances,adjusted:exercise.adjusted,swapped:exercise.swapped,feedback:exercise.feedback,performance:exercise.performance })) , areaLoadBefore:session.areaLoadBefore,actions:session.actions,balanceReport:session.balanceReport })),
     exerciseStats:state.exerciseStats, recovery:state.recovery,
-    savedWorkouts: state.savedPlans.map(plan => ({ id:plan.id, name:plan.name, groups:legacyGroups(plan), intention:plan.intention, goal:plan.goal, durationMinutes:plan.durationMinutes, targetDurationMinutes:plan.targetDurationMinutes, equipment:plan.equipment, createdAt:plan.createdAt, insights:plan.insights, focusAreas:plan.focusAreas })),
-    customExercises, issues:state.issues, activeSession:state.activeSession,
+    savedWorkouts: state.savedPlans.map(plan => ({ id:plan.id, name:plan.name, groups:legacyGroups(plan), intention:plan.intention, goal:plan.goal, durationMinutes:plan.durationMinutes, targetDurationMinutes:plan.targetDurationMinutes, equipment:plan.equipment, createdAt:plan.createdAt, insights:plan.insights, focusAreas:plan.focusAreas,balanceReport:plan.balanceReport })),
+    customExercises, issues:state.issues, activeSession:state.activeSession,learningModel:state.learningModel,
   }
 }
 

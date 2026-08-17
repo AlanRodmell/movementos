@@ -1,6 +1,7 @@
 import { exerciseById, exercises } from '../data/exercises'
 import type {
   AppState,
+  BalanceReport,
   BuilderPreferences,
   Category,
   Equipment,
@@ -9,10 +10,12 @@ import type {
   Goal,
   Intention,
   MuscleArea,
+  MovementRole,
   WorkoutExercise,
   WorkoutPlan,
   WorkoutSession,
 } from './types'
+import { applyLearningFromSession } from './learning'
 
 const MAX_LEVEL = 5
 const TRANSITION_SECONDS = 12
@@ -37,9 +40,18 @@ type ProgrammingFamily =
 interface MovementSlot {
   key: string
   label: string
+  role?: MovementRole
   categories?: Category[]
   families?: ProgrammingFamily[]
   areas?: MuscleArea[]
+}
+
+export const GOAL_TEMPLATE_RULES:Record<Goal,{label:string;roles:MovementRole[]}>={
+  general:{label:'Balanced full body',roles:['horizontal_push','horizontal_pull','squat','hinge','anti_extension']},
+  strength:{label:'Strength foundations',roles:['horizontal_push','horizontal_pull','squat','hinge','anti_extension']},
+  muscle:{label:'Balanced hypertrophy',roles:['horizontal_push','horizontal_pull','squat','lunge','rotation']},
+  endurance:{label:'Whole-body capacity',roles:['horizontal_push','horizontal_pull','lunge','hinge','anti_extension']},
+  mobility:{label:'Mobility and recovery',roles:['recovery','mindfulness']},
 }
 
 interface SelectionContext {
@@ -97,6 +109,19 @@ export function programmingFamily(exercise: Exercise): ProgrammingFamily {
   if (/flex|crunch|leg_raise|trunk/.test(pattern)) return 'core_flexion'
   if (exercise.category === 'core' || /plank|anti_extension|stability|core_post/.test(pattern)) return 'core_stability'
   return 'other'
+}
+
+export function movementRole(exercise:Exercise):MovementRole{
+  const family=programmingFamily(exercise);const pattern=exercise.pattern.toLowerCase()
+  if(exercise.category==='warmup')return'warmup'
+  if(exercise.category==='mindfulness')return'mindfulness'
+  if(exercise.category==='mobility'||exercise.category==='stretching')return'recovery'
+  if(family==='conditioning')return'conditioning'
+  if(family==='push')return/overhead|vertical|handstand|pike/.test(pattern)?'vertical_push':'horizontal_push'
+  if(family==='pull')return/pull.?up|chin.?up|vertical|lat/.test(pattern)?'vertical_pull':'horizontal_pull'
+  if(family==='knee')return'squat';if(family==='hinge')return'hinge';if(family==='lunge')return'lunge';if(family==='carry')return'carry'
+  if(family==='core_rotation'||family==='core_flexion')return'rotation';if(family==='core_stability')return'anti_extension'
+  return'balanced'
 }
 
 export function exerciseMatchesArea(exercise: Exercise, area: MuscleArea) {
@@ -229,7 +254,10 @@ function goalPrescription(exercise: Exercise, goal: Goal) {
 }
 
 function plannedPrescription(exercise: Exercise, intention: Intention, goal: Goal, state: AppState) {
-  const goalAdjusted = intention === 'train' ? goalPrescription(exercise, goal) : { prescription: exercise.prescription, durationSeconds: exercise.durationSeconds }
+  const learnedPrescription=state.learningModel.exercises[exercise.id]?.currentPrescription
+  const source=learnedPrescription?{...exercise,prescription:learnedPrescription}:exercise
+  const learnedSeconds=learnedPrescription&&/sec|min/i.test(learnedPrescription)?Math.max(10,Number(learnedPrescription.match(/\d+/)?.[0])||source.durationSeconds):source.durationSeconds
+  const goalAdjusted = learnedPrescription?{prescription:learnedPrescription,durationSeconds:learnedSeconds}:intention === 'train' ? goalPrescription(source, goal) : { prescription: source.prescription, durationSeconds: source.durationSeconds }
   const affected = [...checkInAreas(state), ...activeIssueAreas(state)].some(area => exerciseMatchesArea(exercise, area) || exercise.contraindications.includes(area))
   if (!affected) return { ...goalAdjusted, adjusted: false }
   const cautiousRecovery = intention === 'recover' && exercise.lowImpact
@@ -297,17 +325,28 @@ function slotMatches(exercise: Exercise, slot: MovementSlot) {
   if (slot.categories && !slot.categories.includes(exercise.category)) return false
   if (slot.families && !slot.families.includes(programmingFamily(exercise))) return false
   if (slot.areas && !slot.areas.some(area => exerciseMatchesArea(exercise, area))) return false
+  if(slot.role&&slot.role!=='balanced'&&movementRole(exercise)!==slot.role)return false
   return true
 }
 
 function candidateScore(exercise: Exercise, preferences: BuilderPreferences, state: AppState, seed: string, context: SelectionContext, slot?: MovementSlot) {
   const stat = state.exerciseStats[exercise.id]
+  const learned=state.learningModel.exercises[exercise.id]
+  const progressionSource=Object.values(state.learningModel.exercises).find(entry=>entry.currentExerciseId===exercise.id)
+  const progressedAway=learned?.currentExerciseId&&learned.currentExerciseId!==exercise.id
+  const contextKey=slot?`${preferences.goal}|${preferences.intention}|Main work|${slot.key}|${preferences.focusAreas[0]??'full_body'}`:''
+  const contextual=contextKey?learned?.contexts[contextKey]:undefined
   const family = programmingFamily(exercise)
   let score = seededNoise(seed, exercise.id) * 3
   if (exercise.goals.includes(preferences.goal)) score += 10
   if (preferences.focusAreas.some(area => exerciseMatchesArea(exercise, area))) score += 18
   if (slot?.areas?.some(area => exerciseMatchesArea(exercise, area))) score += 8
   if (state.profile.favourites.includes(exercise.id)) score += 22
+  if(learned){score+=learned.preference*18+learned.difficultySuitability*8+(learned.completionReliability-.5)*10;score+=Math.min(6,6/Math.sqrt(learned.evidence+1))}
+  else score+=6
+  if(contextual)score+=contextual.preference*12+contextual.difficultySuitability*5+(contextual.reliability-.5)*6
+  if(progressionSource)score+=28
+  if(progressedAway)score-=28
   if (context.discouragedIds.has(exercise.id)) score -= 24
   score -= (context.familyCounts.get(family) ?? 0) * 12
   score -= (context.patternCounts.get(exercise.pattern) ?? 0) * 10
@@ -336,19 +375,26 @@ function chooseForSlot(pool: Exercise[], slot: MovementSlot, preferences: Builde
   return candidates.sort((a, b) => candidateScore(b, preferences, state, seed, context, slot) - candidateScore(a, preferences, state, seed, context, slot))[0] ?? null
 }
 
-const slot = (key: string, label: string, families?: ProgrammingFamily[], areas?: MuscleArea[], categories: Category[] = MAIN_CATEGORIES): MovementSlot => ({ key, label, families, areas, categories })
+const slot = (key: string, label: string, families?: ProgrammingFamily[], areas?: MuscleArea[], categories: Category[] = MAIN_CATEGORIES,role?:MovementRole): MovementSlot => ({ key, label, families, areas, categories,role })
+
+function roleSlot(role:MovementRole){
+  const definitions:Partial<Record<MovementRole,MovementSlot>>={
+    horizontal_push:slot('horizontal-push','horizontal push',['push'],['upper_body'],MAIN_CATEGORIES,'horizontal_push'),horizontal_pull:slot('horizontal-pull','horizontal pull',['pull'],['upper_body'],MAIN_CATEGORIES,'horizontal_pull'),
+    vertical_push:slot('vertical-push','vertical push',['push'],['upper_body'],MAIN_CATEGORIES,'vertical_push'),vertical_pull:slot('vertical-pull','vertical pull',['pull'],['upper_body'],MAIN_CATEGORIES,'vertical_pull'),
+    squat:slot('squat','squat pattern',['knee'],['lower_body'],MAIN_CATEGORIES,'squat'),hinge:slot('hinge','hinge pattern',['hinge'],['lower_body'],MAIN_CATEGORIES,'hinge'),lunge:slot('lunge','lunge pattern',['lunge'],['lower_body'],MAIN_CATEGORIES,'lunge'),
+    carry:slot('carry','loaded carry',['carry'],['full_body'],MAIN_CATEGORIES,'carry'),rotation:slot('rotation','rotation',['core_rotation','core_flexion'],['core'],MAIN_CATEGORIES,'rotation'),anti_extension:slot('anti-extension','anti-extension',['core_stability'],['core'],MAIN_CATEGORIES,'anti_extension'),
+  }
+  return definitions[role]??slot(role,role.replaceAll('_',' '),undefined,['full_body'],MAIN_CATEGORIES,role)
+}
 
 function mainSlots(preferences: BuilderPreferences, count: number) {
   const focuses = preferences.focusAreas.length ? preferences.focusAreas : ['full_body' as const]
   if (focuses.includes('full_body')) {
-    const required = count <= 1
-      ? [slot('balanced', 'balanced full-body movement', undefined, ['full_body'])]
+    const required:MovementSlot[] = count <= 1
+      ? [slot('balanced', 'balanced full-body movement', undefined, ['full_body'],MAIN_CATEGORIES,'balanced')]
       : count === 2
-        ? [slot('upper', 'upper-body compound', ['push', 'pull'], ['upper_body']), slot('lower', 'lower-body compound', ['knee', 'hinge', 'lunge'], ['lower_body'])]
-        : count === 3
-          ? [slot('push', 'push'), slot('pull', 'pull'), slot('lower', 'lower-body compound', ['knee', 'hinge', 'lunge'])]
-          : [slot('push', 'push', ['push']), slot('pull', 'pull', ['pull']), slot('knee', 'knee-dominant', ['knee', 'lunge']), slot('hinge', 'hip-dominant', ['hinge'])]
-    if (count >= 5) required.push(slot('core', 'core stability', ['core_stability', 'core_rotation', 'carry'], ['core']))
+        ? [slot('upper', 'upper-body compound', ['push', 'pull'], ['upper_body'],MAIN_CATEGORIES,'balanced'), slot('lower', 'lower-body compound', ['knee', 'hinge', 'lunge'], ['lower_body'],MAIN_CATEGORIES,'balanced')]
+        : GOAL_TEMPLATE_RULES[preferences.goal].roles.filter(role=>!['conditioning','recovery','mindfulness','warmup'].includes(role)).map(roleSlot).slice(0,count)
     while (required.length < count) required.push(slot(`balance-${required.length}`, 'balanced accessory', undefined, ['full_body']))
     return required.slice(0, count)
   }
@@ -368,18 +414,26 @@ function selectMainCircuit(preferences: BuilderPreferences, state: AppState, see
   const pool = allExercises(state).filter(exercise => isEligible(exercise, preferences, state, MAIN_CATEGORIES))
   const context = selectionContext(state, new Set(), discouragedIds)
   const selected: Exercise[] = []
+  const selectedSlots:MovementSlot[]=[]
   const warnings: string[] = []
   for (const movementSlot of mainSlots(preferences, count)) {
-    const chosen = chooseForSlot(pool, movementSlot, preferences, state, `${seed}:${movementSlot.key}`, context)
+    let chosen = chooseForSlot(pool, movementSlot, preferences, state, `${seed}:${movementSlot.key}`, context)
     if (!chosen) {
-      warnings.push(`No equipment- and tier-compatible ${movementSlot.label} was available.`)
-      continue
+      const related=pool.filter(exercise=>!context.usedIds.has(exercise.id)&&(movementSlot.families?.includes(programmingFamily(exercise))||movementSlot.areas?.some(area=>exerciseMatchesArea(exercise,area))))
+      const fallbackPool=tierCandidates(related.length?related:pool.filter(exercise=>!context.usedIds.has(exercise.id)),state,preferences)
+      chosen=fallbackPool.sort((a,b)=>candidateScore(b,preferences,state,`${seed}:${movementSlot.key}:repair`,context)-candidateScore(a,preferences,state,`${seed}:${movementSlot.key}:repair`,context))[0]??null
+      if(!chosen){warnings.push(`No safe exercise was available to repair the ${movementSlot.label} slot.`);continue}
+      const repairedRole=movementRole(chosen)
+      selectedSlots.push(slot(`repaired-${movementSlot.key}`,`${movementSlot.label} repaired with ${repairedRole.replaceAll('_',' ')}`,[programmingFamily(chosen)],undefined,MAIN_CATEGORIES,repairedRole))
+      warnings.push(`Repaired the unavailable ${movementSlot.label} slot with a safe ${repairedRole.replaceAll('_',' ')} movement.`)
+    }else{
+      selectedSlots.push(movementSlot)
     }
     selected.push(chosen)
     rememberSelection(chosen, context)
   }
   if (selected.length < count) warnings.push(`Built ${selected.length} of ${count} requested main-work slots from the available catalogue.`)
-  return { selected, warnings }
+  return { selected, slots:selectedSlots, warnings }
 }
 
 function pickAuxiliary(pool: Exercise[], count: number, preferences: BuilderPreferences, state: AppState, seed: string, usedIds = new Set<string>(), relevance: Exercise[] = [], discouragedIds: Iterable<string> = []) {
@@ -407,6 +461,10 @@ function rationale(exercise: Exercise, preferences: BuilderPreferences, state: A
   if (focus && focus !== 'full_body') reasons.push(`targets ${focus.replaceAll('_', ' ')}`)
   const decision = getExerciseDecision(exercise.id, state)
   if (decision.action !== 'maintain') reasons.push(decision.action === 'progress' ? 'earned progression' : 'easier work recommended')
+  const learned=state.learningModel.exercises[exercise.id]
+  if(learned?.preference>.2)reasons.push('matched your feedback')
+  if(learned&&learned.exposures<2)reasons.push('adds suitable variety')
+  if(state.profile.favourites.includes(exercise.id))reasons.push('favourite boost')
   return reasons.join(' · ') || `balances the ${programmingFamily(exercise).replaceAll('_', ' ')} pattern`
 }
 
@@ -426,7 +484,7 @@ function requestedSetCount(preferences: BuilderPreferences, main: Exercise[]) {
   return Math.max(1, Math.min(3, Math.floor((mainBudget + SET_REST_SECONDS) / (roundSeconds + SET_REST_SECONDS))))
 }
 
-function planItem(exercise: Exercise, section: WorkoutExercise['section'], preferences: BuilderPreferences, state: AppState, setNumber?: number, totalSets?: number, slotLabel?: string): WorkoutExercise {
+function planItem(exercise: Exercise, section: WorkoutExercise['section'], preferences: BuilderPreferences, state: AppState, setNumber?: number, totalSets?: number, slotLabel?: string,slotKey?:string): WorkoutExercise {
   const prescription = plannedPrescription(exercise, preferences.intention, preferences.goal, state)
   return {
     exerciseId: exercise.id,
@@ -437,6 +495,8 @@ function planItem(exercise: Exercise, section: WorkoutExercise['section'], prefe
     originalLevel: exercise.level,
     setNumber,
     totalSets,
+    slotLabel,
+    slotKey:slotKey??slotLabel?.toLowerCase().replace(/[^a-z0-9]+/g,'-'),
   }
 }
 
@@ -449,7 +509,7 @@ function estimatedPlanMinutes(items: WorkoutExercise[]) {
   return Math.max(1, Math.round(seconds / 60))
 }
 
-function validateGeneratedPlan(plan: WorkoutPlan, preferences: BuilderPreferences, state: AppState, expectedSlots: MovementSlot[]) {
+function buildBalanceReport(plan: WorkoutPlan, preferences: BuilderPreferences, state: AppState, expectedSlots: MovementSlot[]):BalanceReport {
   const issues: string[] = []
   const selected = plan.exercises.map(item => resolveExercise(item.exerciseId, state)).filter((item): item is Exercise => Boolean(item))
   if (selected.length !== plan.exercises.length) issues.push('One or more selected exercises could not be resolved.')
@@ -461,7 +521,14 @@ function validateGeneratedPlan(plan: WorkoutPlan, preferences: BuilderPreference
     if (!firstSet.some(exercise => slotMatches(exercise, movementSlot))) issues.push(`Missing ${movementSlot.label} coverage.`)
   })
   if (plan.exercises.filter(item => resolveExercise(item.exerciseId, state)?.category === 'mindfulness').length !== 1) issues.push('The plan must include exactly one mindful close-out.')
-  return issues
+  const firstSetItems=plan.exercises.filter(item=>item.section==='Main work'&&(!item.setNumber||item.setNumber===1))
+  const coveredRoles=[...new Set(plan.exercises.map(item=>resolveExercise(item.exerciseId,state)).filter((item):item is Exercise=>Boolean(item)).map(movementRole))]
+  const requiredRoles=[...new Set(expectedSlots.map(item=>item.role).filter((item):item is MovementRole=>Boolean(item)))]
+  const requiredAreas=[...new Set(preferences.focusAreas.filter(area=>area!=='full_body'))]
+  const coveredAreas=[...new Set([...firstSetItems.flatMap(item=>{const exercise=resolveExercise(item.exerciseId,state);return exercise?muscles(exercise):[]}),...requiredAreas.filter(area=>firstSet.some(exercise=>exerciseMatchesArea(exercise,area)))])]
+  requiredAreas.forEach(area=>{if(!firstSet.some(exercise=>exerciseMatchesArea(exercise,area)))issues.push(`Missing ${area.replaceAll('_',' ')} coverage.`)})
+  const sectionCounts=Object.fromEntries((['Prepare','Main work','Condition','Restore'] as const).map(section=>[section,plan.exercises.filter(item=>item.section===section).length]))
+  return{valid:issues.length===0,templateKey:`${preferences.intention}:${preferences.goal}`,requiredRoles,coveredRoles,requiredAreas,coveredAreas,sectionCounts,issues,generatedAt:plan.createdAt}
 }
 
 export function generateWorkout(preferences: BuilderPreferences, state: AppState, seed = new Date().toISOString().slice(0, 10), discouragedIds: Iterable<string> = []): WorkoutPlan {
@@ -475,7 +542,7 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
     const selection = selectMainCircuit(preferences, state, seed, requestedExercises, discouragedIds)
     main = selection.selected
     warnings.push(...selection.warnings)
-    movementSlots = mainSlots(preferences, requestedExercises).slice(0, main.length)
+    movementSlots = selection.slots
   }
 
   const totalSets = preferences.intention === 'train' ? requestedSetCount(preferences, main) : 0
@@ -504,7 +571,7 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
   const planned: WorkoutExercise[] = []
   warmup.forEach(exercise => planned.push(planItem(exercise, 'Prepare', preferences, state)))
   for (let setNumber = 1; setNumber <= totalSets; setNumber += 1) {
-    main.forEach((exercise, index) => planned.push(planItem(exercise, 'Main work', preferences, state, setNumber, totalSets, movementSlots[index]?.label)))
+    main.forEach((exercise, index) => planned.push(planItem(exercise, 'Main work', preferences, state, setNumber, totalSets, movementSlots[index]?.label,movementSlots[index]?.key)))
   }
   condition.forEach(exercise => planned.push(planItem(exercise, 'Condition', preferences, state)))
   ;[...restoreMovements, ...meditation].forEach(exercise => planned.push(planItem(exercise, 'Restore', preferences, state)))
@@ -535,8 +602,8 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
       ...warnings,
     ],
   }
-  const validationIssues = validateGeneratedPlan(plan, preferences, state, movementSlots)
-  if (validationIssues.length) plan.insights.push(...validationIssues.map(issue => `Planning note: ${issue}`))
+  plan.balanceReport=buildBalanceReport(plan,preferences,state,movementSlots)
+  if (!plan.balanceReport.valid) plan.insights.push(...plan.balanceReport.issues.map(issue => `Planning note: ${issue}`))
   return plan
 }
 
@@ -749,7 +816,7 @@ export function applySessionCompletion(state: AppState, session: WorkoutSession)
       : next.consecutiveSuccesses >= 3 && exercise && exercise.level < MAX_LEVEL ? 'progress' : 'maintain'
     stats[id] = { ...next, progressionReady: action === 'progress', coachDecision: action }
   }
-  return { ...state, exerciseStats: stats, history: [session, ...state.history].slice(0, 250) }
+  return { ...state, exerciseStats: stats, history: [session, ...state.history].slice(0, 250),learningModel:applyLearningFromSession(state.learningModel,session) }
 }
 
 export function generateCategoryWorkout(area: MuscleArea, state: AppState, durationMinutes = 20) {

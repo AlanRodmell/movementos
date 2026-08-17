@@ -51,6 +51,10 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
   fireEvent.pointerUp(window, { pointerId:6, clientX:10, clientY:19 })
   act(()=>vi.advanceTimersByTime(1000))
   expect(onReorder).not.toHaveBeenCalled()
+  expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+  fireEvent.click(rows[0])
+  expect(screen.getByRole('complementary', { name:/details$/i })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name:'Close exercise details' }))
 
   fireEvent.pointerDown(rows[0], { pointerId:7, button:0, clientX:10, clientY:10 })
   act(()=>vi.advanceTimersByTime(1000))
@@ -58,6 +62,8 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
   fireEvent.pointerMove(window, { pointerId:7, clientX:10, clientY:18 })
   fireEvent.pointerUp(window, { pointerId:7, clientX:10, clientY:18 })
   expect(onReorder).toHaveBeenCalledWith(firstSetIndexes[0], firstSetIndexes[1])
+  fireEvent.click(rows[0])
+  expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
 
   fireEvent.keyDown(rows[0], { key:'Enter' })
   const inspector = screen.getByRole('complementary', { name:/details$/i })

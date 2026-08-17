@@ -72,6 +72,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
   const [drag, setDrag] = useState<DragState | null>(null)
   const dragRef = useRef<DragState | null>(null)
   const holdTimerRef = useRef<number | null>(null)
+  const suppressClickRef = useRef(false)
   const groupSignature = groups.map(group => group.key).join('|')
   const resolve = (id: string) => exerciseById.get(id) ?? customExercises.find(exercise => exercise.id === id)
   const activeGroup = groups.find(group => group.key === activeGroupKey) ?? groups[0]
@@ -156,9 +157,9 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
       clearHoldTimer()
       updateDrag(null)
       if (completed.moved) {
+        suppressClickRef.current = true
+        window.setTimeout(() => { suppressClickRef.current = false }, 0)
         if (completed.fromIndex !== completed.targetIndex) onReorder(completed.fromIndex, completed.targetIndex)
-      } else {
-        setSelectedIndex(current => current === completed.fromIndex ? null : completed.fromIndex)
       }
     }
 
@@ -191,6 +192,11 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
     const targetPosition = event.key === 'ArrowUp' ? position - 1 : position + 1
     const targetIndex = group.indexes[targetPosition]
     if (targetIndex !== undefined) onReorder(index, targetIndex)
+  }
+
+  const selectRow = (index: number) => {
+    if (suppressClickRef.current) return
+    setSelectedIndex(current => current === index ? null : index)
   }
 
   const activateGroup = (key: string) => {
@@ -256,6 +262,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
               aria-roledescription="draggable exercise"
               aria-grabbed={Boolean(isDragging && drag?.activated)}
               onPointerDown={event => beginDrag(event, index)}
+              onClick={() => selectRow(index)}
               onKeyDown={event => keyboardRowAction(event, activeGroup, index)}
               style={transform ? { transform } : undefined}
             >

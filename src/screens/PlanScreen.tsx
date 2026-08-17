@@ -278,9 +278,9 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
           <button className="inspector-close" onClick={closeInspector} aria-label="Close exercise details">×</button>
         </header>
         <div className="inspector-details">
-          <div><span className="inspector-symbol">?</span><p><strong>Why</strong><small>{selectedEntry.rationale}</small></p></div>
-          <div><span className="inspector-symbol">◌</span><p><strong>How</strong><small>{selectedExercise.description}</small></p></div>
-          <div><span className="inspector-symbol">▥</span><p><strong>Focus</strong><small>{[...selectedExercise.primaryMuscles, ...selectedExercise.secondaryMuscles].slice(0,4).map(pretty).join(', ')}</small></p></div>
+          <details><summary><span className="inspector-symbol">?</span><strong>Why</strong><b aria-hidden="true">›</b></summary><p><small>{selectedEntry.rationale}</small></p></details>
+          <details><summary><span className="inspector-symbol">◌</span><strong>How</strong><b aria-hidden="true">›</b></summary><p><small>{selectedExercise.description}</small></p></details>
+          <details><summary><span className="inspector-symbol">▥</span><strong>Focus</strong><b aria-hidden="true">›</b></summary><p><small>{[...selectedExercise.primaryMuscles, ...selectedExercise.secondaryMuscles].slice(0,4).map(pretty).join(', ')}</small></p></details>
           <a href={exerciseVideoUrl(selectedExercise)} target="_blank" rel="noopener noreferrer"><span className="inspector-symbol">▶</span><p><strong>Watch video</strong><small>See movement demonstration</small></p><b>›</b></a>
         </div>
         <div className="inspector-actions" aria-label={`Adjust ${selectedExercise.name}`}>

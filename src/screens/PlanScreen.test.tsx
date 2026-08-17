@@ -1,4 +1,5 @@
 import { act, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
+import { exerciseById } from '../data/exercises'
 import { generateWorkout } from '../domain/engine'
 import { defaultState } from '../storage/state'
 import { PlanScreen } from './PlanScreen'
@@ -62,6 +63,16 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
   const inspector = screen.getByRole('complementary', { name:/details$/i })
   expect(inspector).toHaveTextContent(/Why/i)
   expect(inspector).toHaveTextContent(/Easier/i)
+  const selectedItem=plan.exercises[firstSetIndexes[0]]
+  const selectedExercise=exerciseById.get(selectedItem.exerciseId)!
+  expect(inspector).toHaveTextContent(selectedItem.rationale)
+  expect(inspector).toHaveTextContent(selectedExercise.description)
+  expect(inspector).toHaveTextContent(new RegExp(selectedExercise.primaryMuscles[0].replaceAll('_',' '),'i'))
+  const whySummary=screen.getByText('Why').closest('summary')!
+  expect(whySummary.closest('details')).not.toHaveAttribute('open')
+  fireEvent.click(whySummary)
+  expect(whySummary.closest('details')).toHaveAttribute('open')
+  expect(screen.getByRole('link',{name:/watch video/i}).getAttribute('href')).toContain('youtube.com')
 
   fireEvent.click(screen.getByRole('button', { name:'Close exercise details' }))
   fireEvent.click(screen.getByRole('button', { name:'+ Add exercise' }))

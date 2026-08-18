@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Shell, type View } from './components/Shell'
-import { addPlanExercise, adjustPlanPrescription, applySessionCompletion, avoidPlanExercise, createManualWorkout, generateCategoryWorkout, generateFreshWorkout, generateWorkout, getAreaLoadBreakdown, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './domain/engine'
+import { addPlanExercise, adjustPlanPrescription, applySessionCompletion, avoidPlanExercise, createManualWorkout, generateCategoryWorkout, generateFreshWorkout, generateWorkout, getAreaLoadBreakdown, getDailyRecommendation, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './domain/engine'
 import type { ActiveSession, AppState, BuilderPreferences, Exercise, MuscleArea, Profile, WorkoutPlan, WorkoutSession } from './domain/types'
 import { HomeScreen } from './screens/HomeScreen'
 import { BuilderScreen } from './screens/BuilderScreen'
@@ -30,8 +30,9 @@ export default function App() {
   const goBack = () => { const copy = [...history]; const target = copy.pop() ?? 'home'; setHistory(copy); setView(target); window.scrollTo(0,0) }
   const showPlan = (nextPlan: WorkoutPlan, preferences?: BuilderPreferences) => { setPlan(nextPlan); if (preferences) setLastPreferences(preferences); navigate('plan') }
   const suggested = () => {
-    const preferences: BuilderPreferences = { intention: state.profile.goal === 'mobility' ? 'recover' : 'train', goal: state.profile.goal, durationMinutes: 30, focusAreas: ['full_body'], equipment: state.profile.equipment, level: state.profile.level, includeConditioning: state.profile.goal === 'endurance' || state.profile.goal === 'general', includeWarmup:state.profile.goal!=='mobility', exercisesPerRound:'auto', targetSets:'auto', recoveryModes:['mobility','stretching'] }
-    showPlan(generateWorkout(preferences, state), preferences)
+    const recommendation=getDailyRecommendation(state)
+    const generated=generateWorkout(recommendation.preferences,state)
+    showPlan({...generated,insights:[recommendation.reason,...generated.insights]},recommendation.preferences)
   }
   const category = (area: MuscleArea) => showPlan(generateCategoryWorkout(area, state))
   const toggleList = (key: 'favourites'|'avoidList', id: string) => setState(current => {const active=!current.profile[key].includes(id);const updated={ ...current, profile: { ...current.profile, [key]: active ? [...current.profile[key], id] : current.profile[key].filter(item => item !== id) } };return recordProfileSignal(updated,id,key==='favourites'?'favourited':'avoided',active)})

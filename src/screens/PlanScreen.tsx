@@ -49,7 +49,9 @@ function planGroups(plan: WorkoutPlan): PlanGroup[] {
     }
     group.indexes.push(index)
   })
-  return groups
+  return plan.id.startsWith('manual_')&&groups.length>1
+    ? [{key:'all',label:'All selected movements',note:'Every movement selected from the exercise library',indexes:plan.exercises.map((_,index)=>index)},...groups]
+    : groups
 }
 
 function shortGroupLabel(group: PlanGroup) {
@@ -236,6 +238,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
       setSelectedIndex(current => current === index ? null : index)
       return
     }
+    if(group.key==='all')return
     if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return
     event.preventDefault()
     const position = group.indexes.indexOf(index)
@@ -263,6 +266,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
   }
 
   const closeInspector = () => setSelectedIndex(null)
+  const isAllOverview=activeGroup?.key==='all'
 
   return <div className="screen plan-screen">
     <section className="plan-hero">
@@ -278,10 +282,10 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
     </nav>
 
     {activeGroup && <div className={`plan-workspace ${selectedExercise ? 'has-inspector' : ''}`}>
-      <section className={`plan-section routine-set ${activeGroup.key.startsWith('main-') ? 'main-set' : ''}`}>
+      <section className={`plan-section routine-set ${activeGroup.key.startsWith('main-') ? 'main-set' : ''} ${isAllOverview?'all-movements':''}`}>
         <div className="section-heading">
           <div><h2>{activeGroup.label.replace('Main circuit — ', '')}</h2><small>{activeGroup.note}</small></div>
-          <div className="plan-heading-actions"><span className="drag-instruction">↕ Hold any row 1 second, then drag to reorder</span><button className="add-exercise-button" onClick={toggleAddExercise} aria-expanded={addingToGroupKey === activeGroup.key}>+ Add exercise</button></div>
+          {!isAllOverview&&<div className="plan-heading-actions"><span className="drag-instruction">↕ Hold any row 1 second, then drag to reorder</span><button className="add-exercise-button" onClick={toggleAddExercise} aria-expanded={addingToGroupKey === activeGroup.key}>+ Add exercise</button></div>}
         </div>
         {addingToGroupKey === activeGroup.key && <section className="exercise-picker" aria-label={`Add exercise to ${activeGroup.label}`}>
           <header><div><strong>Add an exercise</strong><small>{activeGroup.key.startsWith('main-') ? 'It will be added to every main set.' : `It will be added to ${activeGroup.label}.`}</small></div><button onClick={toggleAddExercise} aria-label="Close exercise picker">×</button></header>
@@ -308,11 +312,11 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
               data-reorder-index={index}
               role="listitem"
               tabIndex={0}
-              aria-label={`${exercise.name}, ${item.prescription}. Hold for 1 second, then drag to reorder, or press Enter for details.`}
-              aria-roledescription="draggable exercise"
+              aria-label={isAllOverview?`${exercise.name}, ${item.prescription}, ${item.section}. Press Enter for details.`:`${exercise.name}, ${item.prescription}. Hold for 1 second, then drag to reorder, or press Enter for details.`}
+              aria-roledescription={isAllOverview?'exercise':'draggable exercise'}
               aria-grabbed={Boolean(isDragging && drag?.activated)}
-              onPointerDown={event => beginDrag(event, index)}
-              onTouchStart={event => beginTouchDrag(event, index)}
+              onPointerDown={event => !isAllOverview&&beginDrag(event, index)}
+              onTouchStart={event => !isAllOverview&&beginTouchDrag(event, index)}
               onClick={() => selectRow(index)}
               onKeyDown={event => keyboardRowAction(event, activeGroup, index)}
               style={transform ? { transform } : undefined}

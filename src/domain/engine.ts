@@ -218,6 +218,53 @@ export function getReadiness(state: AppState) {
   return { rows, status: recover >= 2 ? 'recover' as const : recover || caution ? 'caution' as const : 'ready' as const }
 }
 
+const readinessFocus:Record<'upper'|'lower'|'core'|'conditioning',MuscleArea>={upper:'upper_body',lower:'lower_body',core:'core',conditioning:'full_body'}
+
+export function getDailyRecommendation(state:AppState):{preferences:BuilderPreferences;reason:string}{
+  const readiness=getReadiness(state)
+  const checkedAreas=checkInAreas(state)
+  const activeFlare=state.issues.find(issue=>issue.status==='active'&&issue.severity==='flare')
+  const latest=[...state.history].sort((a,b)=>Date.parse(b.date)-Date.parse(a.date))[0]
+  const latestIsRecent=Boolean(latest&&Date.parse(latest.date)>=Date.now()-48*3600000)
+  const negativeRow=latestIsRecent?latest?.exercises.find(row=>row.feedback==='discomfort'||row.feedback==='too_hard'):undefined
+  const negativeExercise=negativeRow?resolveExercise(negativeRow.id,state):undefined
+  const feedbackArea=negativeExercise?.primaryMuscles.find(area=>area!=='full_body'&&area!=='mind')
+  const negativeFeedback=Boolean(latestIsRecent&&(latest?.rating==='brutal'||negativeRow))
+  const shouldRecover=state.profile.goal==='mobility'||checkedAreas.length>0||Boolean(activeFlare)||readiness.status==='recover'||negativeFeedback
+  const dayOffset=Math.floor(Date.now()/86400000)%3
+  const trainingOrder=(['upper','lower','core'] as const).map((area,index)=>({area,index})).sort((a,b)=>{
+    const aRow=readiness.rows.find(row=>row.area===a.area)!
+    const bRow=readiness.rows.find(row=>row.area===b.area)!
+    const statusRank={ready:0,caution:1,recover:2}
+    return statusRank[aRow.status]-statusRank[bRow.status]||aRow.load-bRow.load||((a.index-dayOffset+3)%3)-((b.index-dayOffset+3)%3)
+  })
+  const loadedRow=[...readiness.rows].filter(row=>row.area!=='conditioning').sort((a,b)=>{
+    const statusRank={recover:2,caution:1,ready:0}
+    return statusRank[b.status]-statusRank[a.status]||b.load-a.load
+  })[0]
+  const recoveryFocus=activeFlare
+    ? 'full_body'
+    : state.dailyCheckIn.date===today()&&state.dailyCheckIn.primaryArea
+      ? state.dailyCheckIn.primaryArea
+      : checkedAreas[0]??feedbackArea??readinessFocus[loadedRow.area]
+  const focusAreas:MuscleArea[]=shouldRecover?[recoveryFocus]:[readinessFocus[trainingOrder[0].area]]
+  const intention:Intention=shouldRecover?'recover':'train'
+  const reason=activeFlare
+    ? `Recovery selected around your active ${activeFlare.area.replaceAll('_',' ')} issue.`
+    : checkedAreas.length
+      ? `Recovery selected from today’s check-in for ${recoveryFocus.replaceAll('_',' ')}.`
+      : negativeFeedback
+        ? `Recovery selected from your recent workout feedback for ${recoveryFocus.replaceAll('_',' ')}.`
+        : shouldRecover
+          ? `Recovery selected from your current goal and recent training load.`
+          : `${focusAreas[0].replaceAll('_',' ')} selected because it is one of your freshest training areas today.`
+  return{preferences:{
+    intention,goal:shouldRecover?'mobility':state.profile.goal,durationMinutes:'auto',focusAreas,equipment:state.profile.equipment,level:state.profile.level,
+    includeConditioning:!shouldRecover&&(state.profile.goal==='endurance'||state.profile.goal==='general'),includeWarmup:!shouldRecover,
+    exercisesPerRound:'auto',targetSets:'auto',recoveryModes:['mobility','stretching'],
+  },reason}
+}
+
 function equipmentMatches(exercise: Exercise, equipment: Equipment[]) {
   const selected = new Set(['none', ...equipment])
   return exercise.equipment.includes('none') || exercise.equipment.every(item => selected.has(item))
@@ -350,7 +397,7 @@ function candidateScore(exercise: Exercise, preferences: BuilderPreferences, sta
   if (exercise.goals.includes(preferences.goal)) score += 10
   if (preferences.focusAreas.some(area => exerciseMatchesArea(exercise, area))) score += 18
   if (slot?.areas?.some(area => exerciseMatchesArea(exercise, area))) score += 8
-  if (state.profile.favourites.includes(exercise.id)) score += 22
+  if (state.profile.favourites.includes(exercise.id)) score += 120
   if(learned){score+=learned.preference*18+learned.difficultySuitability*8+(learned.completionReliability-.5)*10;score+=Math.min(6,6/Math.sqrt(learned.evidence+1))}
   else score+=6
   if(contextual)score+=contextual.preference*12+contextual.difficultySuitability*5+(contextual.reliability-.5)*6
@@ -380,7 +427,8 @@ function rememberSelection(exercise: Exercise, context: SelectionContext) {
 
 function chooseForSlot(pool: Exercise[], slot: MovementSlot, preferences: BuilderPreferences, state: AppState, seed: string, context: SelectionContext) {
   const matching = pool.filter(exercise => !context.usedIds.has(exercise.id) && slotMatches(exercise, slot))
-  const candidates = tierCandidates(matching, state, preferences)
+  const staples = matching.filter(exercise => state.profile.favourites.includes(exercise.id))
+  const candidates = staples.length ? staples : tierCandidates(matching, state, preferences)
   return candidates.sort((a, b) => candidateScore(b, preferences, state, seed, context, slot) - candidateScore(a, preferences, state, seed, context, slot))[0] ?? null
 }
 
@@ -450,7 +498,9 @@ function pickAuxiliary(pool: Exercise[], count: number, preferences: BuilderPref
   const relevantMuscles = new Set(relevance.flatMap(muscles))
   const result: Exercise[] = []
   while (result.length < count) {
-    const candidates = tierCandidates(pool.filter(exercise => !context.usedIds.has(exercise.id)), state, preferences)
+    const available = pool.filter(exercise => !context.usedIds.has(exercise.id))
+    const staples = available.filter(exercise => state.profile.favourites.includes(exercise.id))
+    const candidates = staples.length ? staples : tierCandidates(available, state, preferences)
     const next = candidates.map(exercise => ({
       exercise,
       score: candidateScore(exercise, preferences, state, seed, context, undefined, section) + muscles(exercise).filter(area => relevantMuscles.has(area)).length * 5,
@@ -474,7 +524,7 @@ function rationale(exercise: Exercise, preferences: BuilderPreferences, state: A
   if(learned?.preference>.2)reasons.push('matched your feedback')
   if((learned?.performanceHistory?.length??0)>=2)reasons.push('prescription matched recent performance')
   if(learned&&learned.exposures<2)reasons.push('adds suitable variety')
-  if(state.profile.favourites.includes(exercise.id))reasons.push('favourite boost')
+  if(state.profile.favourites.includes(exercise.id))reasons.push('stapled by you')
   return reasons.join(' · ') || `balances the ${programmingFamily(exercise).replaceAll('_', ' ')} pattern`
 }
 
@@ -563,12 +613,14 @@ function buildBalanceReport(plan: WorkoutPlan, preferences: BuilderPreferences, 
     if (!firstSet.some(exercise => slotMatches(exercise, movementSlot))) issues.push(`Missing ${movementSlot.label} coverage.`)
   })
   if (plan.exercises.filter(item => resolveExercise(item.exerciseId, state)?.category === 'mindfulness').length !== 1) issues.push('The plan must include exactly one mindful close-out.')
-  const firstSetItems=plan.exercises.filter(item=>item.section==='Main work'&&(!item.setNumber||item.setNumber===1))
+  const focusExercises=preferences.intention==='recover'
+    ? selected.filter(exercise=>exercise.category!=='mindfulness')
+    : firstSet
   const coveredRoles=[...new Set(plan.exercises.map(item=>resolveExercise(item.exerciseId,state)).filter((item):item is Exercise=>Boolean(item)).map(movementRole))]
   const requiredRoles=[...new Set(expectedSlots.map(item=>item.role).filter((item):item is MovementRole=>Boolean(item)))]
   const requiredAreas=[...new Set(preferences.focusAreas.filter(area=>area!=='full_body'))]
-  const coveredAreas=[...new Set([...firstSetItems.flatMap(item=>{const exercise=resolveExercise(item.exerciseId,state);return exercise?muscles(exercise):[]}),...requiredAreas.filter(area=>firstSet.some(exercise=>exerciseMatchesArea(exercise,area)))])]
-  requiredAreas.forEach(area=>{if(!firstSet.some(exercise=>exerciseMatchesArea(exercise,area)))issues.push(`Missing ${area.replaceAll('_',' ')} coverage.`)})
+  const coveredAreas=[...new Set([...focusExercises.flatMap(muscles),...requiredAreas.filter(area=>focusExercises.some(exercise=>exerciseMatchesArea(exercise,area)))])]
+  requiredAreas.forEach(area=>{if(!focusExercises.some(exercise=>exerciseMatchesArea(exercise,area)))issues.push(`Missing ${area.replaceAll('_',' ')} coverage.`)})
   const sectionCounts=Object.fromEntries((['Prepare','Main work','Condition','Restore'] as const).map(section=>[section,plan.exercises.filter(item=>item.section===section).length]))
   return{valid:issues.length===0,templateKey:`${preferences.intention}:${preferences.goal}`,requiredRoles,coveredRoles,requiredAreas,coveredAreas,sectionCounts,issues,generatedAt:plan.createdAt}
 }
@@ -602,8 +654,12 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
 
   const recoveryCategories: Category[] = preferences.recoveryModes.length ? preferences.recoveryModes : ['mobility', 'stretching']
   const recoveryPool = allExercises(state).filter(exercise => isEligible(exercise, preferences, state, recoveryCategories))
+  const recoveringAreas=getReadiness(state).rows.filter(row=>row.status==='recover').length
+  const automaticRecoveryCount=recoveringAreas>=2?7:checkInAreas(state).length>1?6:state.profile.goal==='mobility'?6:preferences.focusAreas.some(area=>area!=='full_body')?4:6
   const recoveryCount = preferences.intention === 'recover'
-    ? Math.max(1, Math.min(12, Math.round((planningMinutes * 60 - 60) / 60)))
+    ? preferences.durationMinutes==='auto'
+      ? automaticRecoveryCount
+      : Math.max(1, Math.min(12, Math.round((planningMinutes * 60 - 60) / 60)))
     : Math.max(1, Math.min(3, Math.round(planningMinutes * 60 * 0.12 / 60)))
   const restoreMovements = pickAuxiliary(recoveryPool, recoveryCount, preferences, state, `${seed}:restore`, used, main, discouragedIds,'Restore')
   restoreMovements.forEach(exercise => used.add(exercise.id))

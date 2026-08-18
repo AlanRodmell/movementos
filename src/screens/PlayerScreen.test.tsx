@@ -154,6 +154,104 @@ it('keeps the player exit action independent from the light shell back-button st
   expect(screen.getByRole('button',{name:/end session/i})).not.toHaveClass('bottom-back')
 })
 
+it('makes a personalised exercise and its target areas explicit in the player',()=>{
+  const plan:WorkoutPlan={id:'personalised-player',name:'Personalised player',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['upper_body'],insights:[],exercises:[{exerciseId:'x001',prescription:'8 reps 🩹',durationSeconds:30,rationale:'Reduced from 10-12 reps to protect the area flagged today.',section:'Main work',adjusted:true}]}
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:30,running:false,deadlineAt:null,startedAt:Date.now(),completedExerciseIds:[]}
+  const state={...defaultState,issues:[{id:'left-chest',area:'chest' as const,severity:'moderate' as const,status:'active' as const,note:'Sensitive today',createdAt:new Date().toISOString(),side:'left' as const,resolvedAt:null}]}
+  const {container}=render(<PlayerScreen session={session} state={state} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+
+  expect(container.querySelector('.player-screen')).toHaveClass('player-personalised')
+  expect(screen.getByText('PERSONALISED FOR TODAY')).toBeInTheDocument()
+  expect(screen.getByText('Left chest · moderate sensitivity')).toBeInTheDocument()
+  expect(screen.getByText('TARGET AREAS')).toBeInTheDocument()
+  expect(screen.getByText('Chest · Triceps')).toBeInTheDocument()
+  expect(screen.getByText('Prescription adapted for today')).toBeInTheDocument()
+  expect(screen.getByText('8 reps')).toBeInTheDocument()
+  expect(screen.queryByText(/🩹/)).not.toBeInTheDocument()
+  expect(screen.getByText('We’ll learn from how this feels today.')).toBeInTheDocument()
+  const disclosure=container.querySelector('.player-learning-strip') as HTMLDetailsElement
+  expect(disclosure.open).toBe(false)
+  fireEvent.click(screen.getByText('View change'))
+  expect(disclosure.open).toBe(true)
+  expect(screen.getByText('Reduced from 10-12 reps to protect the area flagged today.')).toBeInTheDocument()
+})
+
+it('explains an automatic daily check-in adaptation without requiring an active issue',()=>{
+  const plan:WorkoutPlan={id:'check-in-player',name:'Check-in player',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['shoulders'],insights:[],exercises:[{exerciseId:'x008',prescription:'6 reps 🩹',durationSeconds:30,rationale:'Reduced after today’s shoulder check-in.',section:'Main work',adjusted:true}]}
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:30,running:false,deadlineAt:null,startedAt:Date.now(),completedExerciseIds:[]}
+  const state={...defaultState,dailyCheckIn:{date:new Date().toDateString(),tightAreas:['shoulders' as const],primaryArea:'shoulders' as const}}
+  render(<PlayerScreen session={session} state={state} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+
+  expect(screen.getByText('Shoulders flagged in today’s check-in')).toBeInTheDocument()
+  expect(screen.getByText('Shoulders · Triceps')).toBeInTheDocument()
+  expect(screen.getByText('Prescription adapted for today')).toBeInTheDocument()
+})
+
+it.each([
+  ['down','Easier level selected','easier-adjusted'],
+  ['up','Harder level selected','harder-adjusted'],
+] as const)('labels a manually scaled %s exercise without presenting it as an automatic recovery change',(scaled,label,className)=>{
+  const plan:WorkoutPlan={id:`manual-${scaled}`,name:'Manual adjustment',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['upper_body'],insights:[],exercises:[{exerciseId:'x002',prescription:'8 reps',durationSeconds:30,rationale:'Changed during the workout.',section:'Main work',scaled,originalLevel:2}]}
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:30,running:false,deadlineAt:null,startedAt:Date.now(),completedExerciseIds:[]}
+  const {container}=render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+
+  expect(screen.getByText('ADJUSTED BY YOU')).toBeInTheDocument()
+  expect(screen.getAllByText(label).length).toBeGreaterThan(0)
+  expect(container.querySelector('.player-centre')).toHaveClass(className)
+  expect(screen.queryByText('RECOVERY ADJUSTED')).not.toBeInTheDocument()
+})
+
+it('adds target areas without changing the ordinary unadjusted player state',()=>{
+  const plan:WorkoutPlan={id:'ordinary-player',name:'Ordinary player',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['upper_body'],insights:[],exercises:[{exerciseId:'x001',prescription:'10 reps',durationSeconds:30,rationale:'Balanced push volume.',section:'Main work'}]}
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:30,running:false,deadlineAt:null,startedAt:Date.now(),completedExerciseIds:[]}
+  const {container}=render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+
+  expect(container.querySelector('.player-screen')).not.toHaveClass('player-personalised')
+  expect(screen.queryByText('PERSONALISED FOR TODAY')).not.toBeInTheDocument()
+  expect(screen.queryByText('ADAPTATION')).not.toBeInTheDocument()
+  expect(screen.queryByText('We’ll learn from how this feels today.')).not.toBeInTheDocument()
+  expect(screen.getByText('TARGET AREAS')).toBeInTheDocument()
+  expect(screen.getByText('Chest · Triceps')).toBeInTheDocument()
+  expect(screen.getByText('Balanced push volume.')).toBeInTheDocument()
+  expect(screen.getByRole('button',{name:/complete session/i})).toBeEnabled()
+  expect(screen.getByRole('button',{name:'Resume'})).toBeEnabled()
+  expect(screen.getByRole('button',{name:'Skip'})).toBeEnabled()
+})
+
+it('keeps personalised workout chrome out of get-ready and rest phase screens',()=>{
+  const plan:WorkoutPlan={id:'phase-chrome',name:'Phase chrome',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['upper_body'],insights:[],exercises:[{exerciseId:'x001',prescription:'8 reps 🩹',durationSeconds:30,rationale:'Adjusted today.',section:'Main work',adjusted:true},{exerciseId:'x002',prescription:'10 reps',durationSeconds:30,rationale:'Next.',section:'Main work'}]}
+  const ready:ActiveSession={plan,index:0,phase:'get_ready',remainingSeconds:5,running:false,deadlineAt:null,startedAt:Date.now(),completedExerciseIds:[]}
+  const {unmount}=render(<PlayerScreen session={ready} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+  expect(screen.getByRole('heading',{name:'Workout begins in'})).toBeInTheDocument()
+  expect(screen.queryByText('PERSONALISED FOR TODAY')).not.toBeInTheDocument()
+
+  unmount()
+  render(<PlayerScreen session={{...ready,phase:'rest',remainingSeconds:15,index:0}} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+  expect(screen.getByRole('heading',{name:'Recover'})).toBeInTheDocument()
+  expect(screen.queryByText('PERSONALISED FOR TODAY')).not.toBeInTheDocument()
+})
+
+it('removes the personalised treatment when an adjusted exercise advances to an ordinary exercise',()=>{
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-08-16T10:00:00Z'))
+  const startedAt=Date.now()
+  const plan:WorkoutPlan={id:'adaptive-transition',name:'Adaptive transition',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['upper_body'],insights:[],exercises:[{exerciseId:'x001',prescription:'8 reps 🩹',durationSeconds:1,rationale:'Adjusted today.',section:'Main work',adjusted:true},{exerciseId:'x002',prescription:'10 reps',durationSeconds:2,rationale:'Ordinary movement.',section:'Main work'}]}
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:1,running:true,deadlineAt:startedAt+1000,startedAt,completedExerciseIds:[]}
+  render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+
+  expect(screen.getByText('PERSONALISED FOR TODAY')).toBeInTheDocument()
+  act(()=>vi.advanceTimersByTime(1000))
+  expect(screen.getByRole('heading',{name:'Recover'})).toBeInTheDocument()
+  expect(screen.queryByText('PERSONALISED FOR TODAY')).not.toBeInTheDocument()
+
+  act(()=>vi.advanceTimersByTime(15000))
+  expect(screen.getByRole('heading',{name:'Dumbbell Bench Press'})).toBeInTheDocument()
+  expect(screen.queryByText('PERSONALISED FOR TODAY')).not.toBeInTheDocument()
+  expect(screen.getByText('Chest · Triceps')).toBeInTheDocument()
+  expect(screen.getByText('0:02')).toBeInTheDocument()
+  vi.useRealTimers()
+})
+
 it('collects optional grouped exercise feedback before the overall rating',()=>{
   const startedAt=Date.now()
   const plan:WorkoutPlan={id:'review',name:'Review',intention:'train',goal:'strength',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['upper_body'],insights:[],exercises:[{exerciseId:'x001',prescription:'10 reps',durationSeconds:30,rationale:'Press slot',section:'Main work',setNumber:1,totalSets:1,slotKey:'horizontal-push'}]}

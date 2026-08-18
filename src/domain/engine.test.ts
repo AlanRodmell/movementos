@@ -1,6 +1,6 @@
 import { catalogueStats, exerciseById, exercises, exerciseVideoUrl } from '../data/exercises'
 import { defaultState } from '../storage/state'
-import { addPlanExercise, applySessionCompletion, avoidPlanExercise, createManualWorkout, exerciseMatchesArea, generateFreshWorkout, generateWorkout, getExerciseDecision, learningContextKey, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
+import { addPlanExercise, applySessionCompletion, avoidPlanExercise, createManualWorkout, exerciseMatchesArea, generateFreshWorkout, generateWorkout, getExerciseDecision, learningContextKey, movementPosition, orderWorkoutExercisesForFlow, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
 import { emptyLearningEntry } from './learning'
 import type { BuilderPreferences, WorkoutSession } from './types'
 
@@ -157,6 +157,7 @@ describe('workout engine', () => {
     const plan=generateWorkout({...preferences,durationMinutes:45},defaultState,'one-meditation')
     const meditations=plan.exercises.filter(item=>exerciseById.get(item.exerciseId)?.category==='mindfulness')
     expect(meditations).toHaveLength(1)
+    expect(plan.exercises.at(-1)?.exerciseId).toBe(meditations[0].exerciseId)
   })
 
   it('honours exercises per round, target sets and optional warm-up',()=>{
@@ -204,6 +205,26 @@ describe('workout engine', () => {
     const idsFor=(setNumber:number)=>reordered.exercises.filter(item=>item.section==='Main work'&&item.setNumber===setNumber).map(item=>item.exerciseId)
     expect(idsFor(1)).toEqual(idsFor(2))
     expect(idsFor(1)).not.toEqual(plan.exercises.filter(item=>item.section==='Main work'&&item.setNumber===1).map(item=>item.exerciseId))
+  })
+
+  it('orders each routine group from standing through bent, supported, and floor work',()=>{
+    const custom=(id:string,name:string,pattern:string,category:'upper'|'lower'|'core'|'mindfulness')=>({id,name,description:name,category,pattern,level:category==='mindfulness'?0 as const:2 as const,durationSeconds:30,prescription:'10 reps',equipment:['none' as const],primaryMuscles:[category==='lower'?'legs' as const:category==='core'?'core' as const:category==='mindfulness'?'mind' as const:'chest' as const],secondaryMuscles:[],unilateral:false,lowImpact:true,goals:['general' as const],contraindications:[],isCustom:true})
+    const customExercises=[custom('floor','Dead Bug','core_stability','core'),custom('stand','Standing Press','press','upper'),custom('support','Half-Kneeling Press','press','upper'),custom('bend','Romanian Deadlift','hinge','lower'),custom('mindful','Box Breathing','breathing','mindfulness')]
+    const state={...defaultState,customExercises}
+    const item=(exerciseId:string,section:'Main work'|'Restore',setNumber?:number)=>({exerciseId,prescription:'10 reps',durationSeconds:30,rationale:'Test',section,setNumber,totalSets:setNumber?2:undefined})
+    const ordered=orderWorkoutExercisesForFlow([item('floor','Main work',1),item('stand','Main work',1),item('support','Main work',1),item('bend','Main work',1),item('floor','Main work',2),item('stand','Main work',2),item('support','Main work',2),item('bend','Main work',2),item('floor','Restore'),item('mindful','Restore'),item('stand','Restore')],state)
+    expect(ordered.filter(row=>row.section==='Main work'&&row.setNumber===1).map(row=>row.exerciseId)).toEqual(['stand','bend','support','floor'])
+    expect(ordered.filter(row=>row.section==='Main work'&&row.setNumber===2).map(row=>row.exerciseId)).toEqual(['stand','bend','support','floor'])
+    expect(ordered.filter(row=>row.section==='Restore').map(row=>row.exerciseId)).toEqual(['stand','floor','mindful'])
+  })
+
+  it('integrates posture flow ordering into generated routines',()=>{
+    const plan=generateWorkout({...preferences,focusAreas:['full_body'],exercisesPerRound:5,targetSets:2},defaultState,'flow-order')
+    const rank={standing:0,bent:1,supported:2,floor:3}
+    for(const setNumber of [1,2]){
+      const positions=plan.exercises.filter(item=>item.section==='Main work'&&item.setNumber===setNumber).map(item=>rank[movementPosition(exerciseById.get(item.exerciseId)!)])
+      expect(positions).toEqual([...positions].sort((a,b)=>a-b))
+    }
   })
 
   it('avoids and replaces every occurrence across all sets',()=>{

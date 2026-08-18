@@ -264,6 +264,10 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .saved-workout-actions { display:flex; gap:8px; }
 .saved-workout-actions .primary,.saved-workout-actions .secondary { min-height:44px; box-shadow:none; }
 .saved-workout-actions .danger-text { color:#9d3c2f; }
+.saved-workout-rename { display:grid; gap:8px; margin:2px 0 8px; max-width:460px; }
+.saved-workout-rename label { font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+.saved-workout-rename input { width:100%; }
+.saved-workout-rename > div { display:flex; gap:8px; }
 .saved-empty { text-align:center; display:grid; justify-items:center; gap:10px; padding:36px 24px; }
 .saved-empty > span { width:58px; height:58px; display:grid; place-items:center; border-radius:18px; background:var(--blue-soft); color:var(--blue); font-size:1.5rem; }
 .saved-empty h2,.saved-empty p { margin-bottom:0; }
@@ -458,6 +462,7 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
   .bottom-nav small { font-size:.6rem; }
   .saved-workout-card { grid-template-columns:1fr; }
   .saved-workout-actions { display:grid; grid-template-columns:1fr 1fr; }
+  .saved-workout-actions .primary:first-child { grid-column:1 / -1; }
   .data-reset { align-items:stretch; flex-direction:column; }
   .player-screen { padding-inline:14px; overflow-x:hidden; }
   .player-centre { width:100%; min-width:0; padding-inline:0; }

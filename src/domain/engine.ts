@@ -95,6 +95,10 @@ function hash(input: string) {
 
 const seededNoise = (seed: string, id: string) => (hash(`${seed}:${id}`) % 1000) / 1000
 
+const canonicalFocus = (focusAreas: MuscleArea[]) => [...new Set(focusAreas.length ? focusAreas : ['full_body' as const])].sort().join('+')
+export const learningContextKey = (goal:Goal,intention:Intention,section:WorkoutExercise['section'],slotKey:string,focusAreas:MuscleArea[]) => `${goal}|${intention}|${section}|${slotKey}|${canonicalFocus(focusAreas)}`
+const routineKey = (preferences:BuilderPreferences) => `${preferences.goal}|${preferences.intention}|${preferences.intention}:${preferences.goal}`
+
 export function programmingFamily(exercise: Exercise): ProgrammingFamily {
   const pattern = exercise.pattern.toLowerCase()
   if (exercise.category === 'conditioning') return 'conditioning'
@@ -255,9 +259,14 @@ function goalPrescription(exercise: Exercise, goal: Goal) {
 
 function plannedPrescription(exercise: Exercise, intention: Intention, goal: Goal, state: AppState) {
   const learnedPrescription=state.learningModel.exercises[exercise.id]?.currentPrescription
+  const performanceHistory=state.learningModel.exercises[exercise.id]?.performanceHistory??[]
   const source=learnedPrescription?{...exercise,prescription:learnedPrescription}:exercise
   const learnedSeconds=learnedPrescription&&/sec|min/i.test(learnedPrescription)?Math.max(10,Number(learnedPrescription.match(/\d+/)?.[0])||source.durationSeconds):source.durationSeconds
-  const goalAdjusted = learnedPrescription?{prescription:learnedPrescription,durationSeconds:learnedSeconds}:intention === 'train' ? goalPrescription(source, goal) : { prescription: source.prescription, durationSeconds: source.durationSeconds }
+  const baseGoalAdjusted = learnedPrescription?{prescription:learnedPrescription,durationSeconds:learnedSeconds}:intention === 'train' ? goalPrescription(source, goal) : { prescription: source.prescription, durationSeconds: source.durationSeconds }
+  const ratios=performanceHistory.slice(-3).flatMap(sample=>{const values=sample.prescription.match(/\d+(?:\.\d+)?/g)?.map(Number)??[];const achieved=sample.achievedSeconds??sample.achievedReps;const prescribed=sample.achievedSeconds?values[0]:values.at(-1);return achieved&&prescribed?[achieved/prescribed]:[]})
+  const averageRatio=ratios.length>=2?ratios.reduce((sum,value)=>sum+value,0)/ratios.length:1
+  const performanceMultiplier=learnedPrescription?1:averageRatio>=1.1?1.1:averageRatio<=.85?.9:1
+  const goalAdjusted=performanceMultiplier===1?baseGoalAdjusted:{prescription:scaleNumbers(baseGoalAdjusted.prescription,performanceMultiplier),durationSeconds:Math.max(10,Math.round(baseGoalAdjusted.durationSeconds*performanceMultiplier/5)*5)}
   const affected = [...checkInAreas(state), ...activeIssueAreas(state)].some(area => exerciseMatchesArea(exercise, area) || exercise.contraindications.includes(area))
   if (!affected) return { ...goalAdjusted, adjusted: false }
   const cautiousRecovery = intention === 'recover' && exercise.lowImpact
@@ -329,13 +338,13 @@ function slotMatches(exercise: Exercise, slot: MovementSlot) {
   return true
 }
 
-function candidateScore(exercise: Exercise, preferences: BuilderPreferences, state: AppState, seed: string, context: SelectionContext, slot?: MovementSlot) {
+function candidateScore(exercise: Exercise, preferences: BuilderPreferences, state: AppState, seed: string, context: SelectionContext, slot?: MovementSlot, section:WorkoutExercise['section']='Main work') {
   const stat = state.exerciseStats[exercise.id]
   const learned=state.learningModel.exercises[exercise.id]
   const progressionSource=Object.values(state.learningModel.exercises).find(entry=>entry.currentExerciseId===exercise.id)
   const progressedAway=learned?.currentExerciseId&&learned.currentExerciseId!==exercise.id
-  const contextKey=slot?`${preferences.goal}|${preferences.intention}|Main work|${slot.key}|${preferences.focusAreas[0]??'full_body'}`:''
-  const contextual=contextKey?learned?.contexts[contextKey]:undefined
+  const contextKey=learningContextKey(preferences.goal,preferences.intention,section,slot?.key??movementRole(exercise),preferences.focusAreas)
+  const contextual=learned?.contexts[contextKey]
   const family = programmingFamily(exercise)
   let score = seededNoise(seed, exercise.id) * 3
   if (exercise.goals.includes(preferences.goal)) score += 10
@@ -436,7 +445,7 @@ function selectMainCircuit(preferences: BuilderPreferences, state: AppState, see
   return { selected, slots:selectedSlots, warnings }
 }
 
-function pickAuxiliary(pool: Exercise[], count: number, preferences: BuilderPreferences, state: AppState, seed: string, usedIds = new Set<string>(), relevance: Exercise[] = [], discouragedIds: Iterable<string> = []) {
+function pickAuxiliary(pool: Exercise[], count: number, preferences: BuilderPreferences, state: AppState, seed: string, usedIds = new Set<string>(), relevance: Exercise[] = [], discouragedIds: Iterable<string> = [],section:WorkoutExercise['section']='Restore') {
   const context = selectionContext(state, usedIds, discouragedIds)
   const relevantMuscles = new Set(relevance.flatMap(muscles))
   const result: Exercise[] = []
@@ -444,7 +453,7 @@ function pickAuxiliary(pool: Exercise[], count: number, preferences: BuilderPref
     const candidates = tierCandidates(pool.filter(exercise => !context.usedIds.has(exercise.id)), state, preferences)
     const next = candidates.map(exercise => ({
       exercise,
-      score: candidateScore(exercise, preferences, state, seed, context) + muscles(exercise).filter(area => relevantMuscles.has(area)).length * 5,
+      score: candidateScore(exercise, preferences, state, seed, context, undefined, section) + muscles(exercise).filter(area => relevantMuscles.has(area)).length * 5,
     })).sort((a, b) => b.score - a.score)[0]?.exercise
     if (!next) break
     result.push(next)
@@ -463,25 +472,35 @@ function rationale(exercise: Exercise, preferences: BuilderPreferences, state: A
   if (decision.action !== 'maintain') reasons.push(decision.action === 'progress' ? 'earned progression' : 'easier work recommended')
   const learned=state.learningModel.exercises[exercise.id]
   if(learned?.preference>.2)reasons.push('matched your feedback')
+  if((learned?.performanceHistory?.length??0)>=2)reasons.push('prescription matched recent performance')
   if(learned&&learned.exposures<2)reasons.push('adds suitable variety')
   if(state.profile.favourites.includes(exercise.id))reasons.push('favourite boost')
   return reasons.join(' · ') || `balances the ${programmingFamily(exercise).replaceAll('_', ' ')} pattern`
 }
 
-function requestedMainCount(preferences: BuilderPreferences) {
+function requestedMainCount(preferences: BuilderPreferences, state:AppState) {
   if (preferences.exercisesPerRound !== 'auto') return Math.max(1, Math.min(12, preferences.exercisesPerRound))
-  if (preferences.durationMinutes !== 'auto' && preferences.durationMinutes <= 15) return 3
-  if (preferences.durationMinutes !== 'auto' && preferences.durationMinutes >= 45) return 6
-  return 4
+  const base=preferences.durationMinutes !== 'auto' && preferences.durationMinutes <= 15?3:preferences.durationMinutes !== 'auto'&&preferences.durationMinutes>=45?6:4
+  const learned=state.learningModel.routineContexts[routineKey(preferences)]
+  if(!learned||learned.evidence<2||(learned.confidence<=.1)||!learned.preferredMainCount||(learned.averageCompletionRate??0)<.7)return base
+  const learnedCount=Math.round((base+learned.preferredMainCount)/2);const maxIncrease=preferences.durationMinutes==='auto'?2:1
+  return Math.max(2,Math.min(8,Math.min(base+maxIncrease,learnedCount)))
 }
 
-function requestedSetCount(preferences: BuilderPreferences, main: Exercise[]) {
+function requestedSetCount(preferences: BuilderPreferences, main: Exercise[], state:AppState) {
   if (preferences.targetSets !== 'auto') return Math.max(1, Math.min(10, preferences.targetSets))
-  if (preferences.durationMinutes === 'auto') return 3
-  const fixedBudget = (preferences.includeWarmup ? preferences.durationMinutes * 60 * 0.15 : 0) + preferences.durationMinutes * 60 * 0.18 + (preferences.includeConditioning ? 60 : 0)
-  const mainBudget = Math.max(60, preferences.durationMinutes * 60 - fixedBudget)
-  const roundSeconds = Math.max(1, main.reduce((sum, exercise) => sum + exercise.durationSeconds + TRANSITION_SECONDS, 0))
-  return Math.max(1, Math.min(3, Math.floor((mainBudget + SET_REST_SECONDS) / (roundSeconds + SET_REST_SECONDS))))
+  let base=3
+  if(preferences.durationMinutes!=='auto'){
+    const fixedBudget = (preferences.includeWarmup ? preferences.durationMinutes * 60 * 0.15 : 0) + preferences.durationMinutes * 60 * 0.18 + (preferences.includeConditioning ? 60 : 0)
+    const mainBudget = Math.max(60, preferences.durationMinutes * 60 - fixedBudget)
+    const roundSeconds = Math.max(1, main.reduce((sum, exercise) => sum + exercise.durationSeconds + TRANSITION_SECONDS, 0))
+    base=Math.max(1,Math.min(3,Math.floor((mainBudget+SET_REST_SECONDS)/(roundSeconds+SET_REST_SECONDS))))
+  }
+  const learned=state.learningModel.routineContexts[routineKey(preferences)]
+  if(learned&&learned.evidence>=2&&learned.confidence>.1&&learned.preferredSets&&(learned.averageCompletionRate??0)>=.7)base=Math.max(1,Math.min(5,base+1,Math.round((base+learned.preferredSets)/2)))
+  const relevantCategories=new Set(main.map(exercise=>exercise.category));const relevantReadiness=getReadiness(state).rows.filter(row=>relevantCategories.has(row.area))
+  const multiplier=relevantReadiness.some(row=>row.status==='recover')?.67:relevantReadiness.some(row=>row.status==='caution')?.8:1
+  return Math.max(1,Math.round(base*multiplier))
 }
 
 function planItem(exercise: Exercise, section: WorkoutExercise['section'], preferences: BuilderPreferences, state: AppState, setNumber?: number, totalSets?: number, slotLabel?: string,slotKey?:string): WorkoutExercise {
@@ -533,7 +552,7 @@ function buildBalanceReport(plan: WorkoutPlan, preferences: BuilderPreferences, 
 
 export function generateWorkout(preferences: BuilderPreferences, state: AppState, seed = new Date().toISOString().slice(0, 10), discouragedIds: Iterable<string> = []): WorkoutPlan {
   const desiredMinutes = preferences.durationMinutes === 'auto' ? null : preferences.durationMinutes
-  const requestedExercises = requestedMainCount(preferences)
+  const requestedExercises = requestedMainCount(preferences,state)
   const warnings: string[] = []
   let main: Exercise[] = []
   let movementSlots: MovementSlot[] = []
@@ -545,17 +564,17 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
     movementSlots = selection.slots
   }
 
-  const totalSets = preferences.intention === 'train' ? requestedSetCount(preferences, main) : 0
+  const totalSets = preferences.intention === 'train' ? requestedSetCount(preferences, main,state) : 0
   const planningMinutes = desiredMinutes ?? Math.max(10, Math.round(((preferences.includeWarmup ? 150 : 0) + main.length * Math.max(1, totalSets) * 65 + 150) / 60))
   const used = new Set(main.map(exercise => exercise.id))
   const warmupPool = allExercises(state).filter(exercise => isEligible(exercise, preferences, state, ['warmup']))
   const warmupCount = preferences.includeWarmup ? Math.max(1, Math.min(4, Math.round(planningMinutes * 60 * 0.14 / 45))) : 0
-  const warmup = pickAuxiliary(warmupPool, warmupCount, preferences, state, `${seed}:warmup`, used, main, discouragedIds)
+  const warmup = pickAuxiliary(warmupPool, warmupCount, preferences, state, `${seed}:warmup`, used, main, discouragedIds,'Prepare')
   warmup.forEach(exercise => used.add(exercise.id))
 
   const conditionPool = allExercises(state).filter(exercise => isEligible(exercise, preferences, state, ['conditioning']))
   const conditionCount = preferences.intention === 'train' && preferences.includeConditioning ? (planningMinutes >= 45 ? 2 : 1) : 0
-  const condition = pickAuxiliary(conditionPool, conditionCount, preferences, state, `${seed}:condition`, used, main, discouragedIds)
+  const condition = pickAuxiliary(conditionPool, conditionCount, preferences, state, `${seed}:condition`, used, main, discouragedIds,'Condition')
   condition.forEach(exercise => used.add(exercise.id))
 
   const recoveryCategories: Category[] = preferences.recoveryModes.length ? preferences.recoveryModes : ['mobility', 'stretching']
@@ -563,10 +582,10 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
   const recoveryCount = preferences.intention === 'recover'
     ? Math.max(1, Math.min(12, Math.round((planningMinutes * 60 - 60) / 60)))
     : Math.max(1, Math.min(3, Math.round(planningMinutes * 60 * 0.12 / 60)))
-  const restoreMovements = pickAuxiliary(recoveryPool, recoveryCount, preferences, state, `${seed}:restore`, used, main, discouragedIds)
+  const restoreMovements = pickAuxiliary(recoveryPool, recoveryCount, preferences, state, `${seed}:restore`, used, main, discouragedIds,'Restore')
   restoreMovements.forEach(exercise => used.add(exercise.id))
   const meditationPool = allExercises(state).filter(exercise => isEligible(exercise, preferences, state, ['mindfulness']))
-  const meditation = pickAuxiliary(meditationPool, 1, preferences, state, `${seed}:meditation`, used, main, discouragedIds)
+  const meditation = pickAuxiliary(meditationPool, 1, preferences, state, `${seed}:meditation`, used, main, discouragedIds,'Restore')
 
   const planned: WorkoutExercise[] = []
   warmup.forEach(exercise => planned.push(planItem(exercise, 'Prepare', preferences, state)))
@@ -579,6 +598,7 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
   const durationMinutes = estimatedPlanMinutes(planned)
   const focus = preferences.focusAreas.map(area => area.replaceAll('_', ' ')).join(' + ') || 'full body'
   const readiness = getReadiness(state)
+  const learnedRoutine=state.learningModel.routineContexts[routineKey(preferences)]
   const familyCoverage = [...new Set(main.map(exercise => programmingFamily(exercise).replaceAll('_', ' ')))]
   const plan: WorkoutPlan = {
     id: `plan_${Date.now()}`,
@@ -596,9 +616,10 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
         ? `${restoreMovements.length} targeted mobility/stretch movements and one mindful close-out.`
         : `${main.length} main movements across ${totalSets} set${totalSets === 1 ? '' : 's'}: ${familyCoverage.join(', ')}.`,
       `Estimated ${durationMinutes} min${desiredMinutes ? ` against a ${desiredMinutes} min target` : ''}.`,
-      readiness.status === 'ready' ? 'Current training load is ready.' : `Readiness is ${readiness.status}; volume and selection were adjusted.`,
+      readiness.status === 'ready' ? 'Current training load is ready.' : `Readiness is ${readiness.status}; selection was adjusted for recent load and automatic volume adapts for affected main-work areas.`,
       state.issues.some(issue => issue.status === 'active') ? 'Active issues were applied as safety constraints.' : 'No active issue constraints applied.',
       Object.keys(state.exerciseStats).length ? 'Exercise and movement-family history informed progression and variety.' : 'Complete and rate sessions to begin progression.',
+      learnedRoutine&&learnedRoutine.evidence>=2&&learnedRoutine.confidence>.1&&(preferences.exercisesPerRound==='auto'||preferences.targetSets==='auto') ? `Automatic circuit shape reflects ${learnedRoutine.positive} positively rated session${learnedRoutine.positive===1?'':'s'} in this training context.` : 'Automatic circuit shape will adapt after repeated successful sessions.',
       ...warnings,
     ],
   }
@@ -797,21 +818,23 @@ export function applySessionCompletion(state: AppState, session: WorkoutSession)
       attempts: 0, completed: 0, easyGood: 0, hard: 0, brutal: 0, consecutiveSuccesses: 0,
       lastRating: null, lastCompletedAt: null, lastDurationSeconds: null, progressionReady: false, coachDecision: null,
     } satisfies ExerciseStat
-    const positive = session.rating === 'easy' || session.rating === 'good'
+    const feedback=session.exercises.find(item=>item.id===id)?.feedback
+    const individualRating:WorkoutSession['rating']=feedback==='good_fit'?'good':feedback==='too_easy'?'easy':feedback==='too_hard'?'hard':feedback==='discomfort'?'brutal':feedback==='didnt_enjoy'?'unrated':session.rating
+    const positive = individualRating === 'easy' || individualRating === 'good'
     const next = {
       ...previous,
       attempts: previous.attempts + 1,
       completed: previous.completed + 1,
       easyGood: previous.easyGood + (positive ? 1 : 0),
-      hard: previous.hard + (session.rating === 'hard' ? 1 : 0),
-      brutal: previous.brutal + (session.rating === 'brutal' ? 1 : 0),
+      hard: previous.hard + (individualRating === 'hard' ? 1 : 0),
+      brutal: previous.brutal + (individualRating === 'brutal' ? 1 : 0),
       consecutiveSuccesses: positive ? previous.consecutiveSuccesses + 1 : 0,
-      lastRating: session.rating,
+      lastRating: individualRating,
       lastCompletedAt: session.date,
       lastDurationSeconds: session.exercises.find(item => item.id === id)?.durationSeconds ?? null,
     }
     const exercise = resolveExercise(id, state)
-    const action = session.rating === 'brutal' && exercise && exercise.level > 1
+    const action = individualRating === 'brutal' && exercise && exercise.level > 1
       ? 'regress'
       : next.consecutiveSuccesses >= 3 && exercise && exercise.level < MAX_LEVEL ? 'progress' : 'maintain'
     stats[id] = { ...next, progressionReady: action === 'progress', coachDecision: action }

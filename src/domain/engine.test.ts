@@ -1,6 +1,7 @@
 import { catalogueStats, exerciseById, exercises, exerciseVideoUrl } from '../data/exercises'
 import { defaultState } from '../storage/state'
-import { addPlanExercise, applySessionCompletion, avoidPlanExercise, createManualWorkout, exerciseMatchesArea, generateFreshWorkout, generateWorkout, getExerciseDecision, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
+import { addPlanExercise, applySessionCompletion, avoidPlanExercise, createManualWorkout, exerciseMatchesArea, generateFreshWorkout, generateWorkout, getExerciseDecision, learningContextKey, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
+import { emptyLearningEntry } from './learning'
 import type { BuilderPreferences, WorkoutSession } from './types'
 
 const preferences: BuilderPreferences = { intention:'train', goal:'strength', durationMinutes:30, focusAreas:['upper_body'], equipment:['none','wall','chair'], level:2, includeConditioning:false, includeWarmup:true, exercisesPerRound:'auto', targetSets:'auto', recoveryModes:['mobility','stretching'] }
@@ -87,6 +88,43 @@ describe('workout engine', () => {
     const plan=generateWorkout(preferences,state,'check-in')
     expect(plan.exercises.every(item=>item.adjusted)).toBe(true)
     expect(plan.insights.join(' ')).toContain('adjusted')
+  })
+
+  it('reduces automatic set volume when the trained areas need recovery',()=>{
+    const fullBody={...preferences,focusAreas:['full_body' as const],targetSets:'auto' as const,exercisesPerRound:4 as const,durationMinutes:'auto' as const}
+    const ready=generateWorkout(fullBody,defaultState,'ready-volume')
+    const recovering={...defaultState,dailyCheckIn:{date:new Date().toDateString(),tightAreas:['full_body' as const],primaryArea:'full_body' as const}}
+    const reduced=generateWorkout(fullBody,recovering,'recover-volume')
+    const sets=(plan:typeof ready)=>Math.max(...plan.exercises.filter(item=>item.section==='Main work').map(item=>item.totalSets??0))
+    expect(sets(reduced)).toBeLessThan(sets(ready))
+  })
+
+  it('uses successful routine structure learning for automatic workout shape',()=>{
+    const fullBody={...preferences,focusAreas:['full_body' as const],targetSets:'auto' as const,exercisesPerRound:'auto' as const,durationMinutes:'auto' as const}
+    const key='strength|train|train:strength'
+    const state={...defaultState,learningModel:{...defaultState.learningModel,routineContexts:{[key]:{confidence:.7,positive:4,negative:0,evidence:4,lastUpdatedAt:new Date().toISOString(),preferredMainCount:6,preferredSets:5,averageCompletionRate:.95,averageDurationRatio:1,warmupAffinity:.5,conditioningAffinity:0}}}}
+    const plan=generateWorkout(fullBody,state,'learned-structure')
+    const firstSet=plan.exercises.filter(item=>item.section==='Main work'&&item.setNumber===1)
+    expect(firstSet).toHaveLength(5)
+    expect(firstSet[0].totalSets).toBe(4)
+  })
+
+  it('uses exercise feedback instead of attributing a brutal session to every movement',()=>{
+    const session:WorkoutSession={id:'specific-feedback',planName:'Test',date:new Date().toISOString(),durationSeconds:60,intention:'train',goal:'strength',rating:'brutal',completedExerciseIds:['x001'],exercises:[{id:'x001',name:'Press',prescription:'10 reps',durationSeconds:30,feedback:'good_fit'}],focus:['upper_body'],areaLoadBefore:{}}
+    const state=applySessionCompletion(defaultState,session)
+    expect(state.exerciseStats.x001.lastRating).toBe('good')
+    expect(state.exerciseStats.x001.consecutiveSuccesses).toBe(1)
+  })
+
+  it('uses repeated achieved performance to tune the next prescription',()=>{
+    const learned={...emptyLearningEntry(),performanceHistory:[{at:'2026-08-16T10:00:00.000Z',prescription:'8 reps',achievedReps:10},{at:'2026-08-17T10:00:00.000Z',prescription:'8 reps',achievedReps:10}]}
+    const state={...defaultState,profile:{...defaultState.profile,goal:'strength' as const},learningModel:{...defaultState.learningModel,exercises:{x001:learned}}}
+    expect(createManualWorkout(['x001'],state).exercises[0].prescription).toBe('9-10 reps')
+  })
+
+  it('canonicalises all focus areas in learning contexts',()=>{
+    expect(learningContextKey('strength','train','Main work','push',['shoulders','chest'])).toBe(learningContextKey('strength','train','Main work','push',['chest','shoulders']))
+    expect(learningContextKey('strength','train','Main work','push',['shoulders','chest'])).toContain('chest+shoulders')
   })
 
   it('keeps recovery adjustments when a user selects a harder variant',()=>{

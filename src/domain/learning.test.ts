@@ -80,4 +80,21 @@ describe('local learning model',()=>{
     const learned=applyLearningFromSession(model,session('too_hard')).exercises.x001
     expect(learned.preference).toBeLessThan(.1)
   })
+
+  it('timestamps discomfort so an old event does not indefinitely block progression',()=>{
+    const entry={...emptyLearningEntry(),successfulPerformances:3,discomfort:1,lastDiscomfortAt:'2026-01-01T00:00:00.000Z',lastCompletedAt:new Date().toISOString()}
+    const state={...defaultState,profile:{...defaultState.profile,equipment:['none' as const,'dumbbells' as const,'bench' as const]},learningModel:{...defaultState.learningModel,exercises:{x001:entry}}}
+    expect(getProgressionRecommendations(state)).toHaveLength(1)
+    const recent={...state,learningModel:{...state.learningModel,exercises:{x001:{...entry,lastDiscomfortAt:new Date().toISOString()}}}}
+    expect(getProgressionRecommendations(recent)).toHaveLength(0)
+  })
+
+  it('learns completion-backed routine structure from positive sessions',()=>{
+    const structured={...session('good_fit'),planStructure:{targetDurationMinutes:1,mainExerciseCount:4,totalSets:3,includeWarmup:false,includeConditioning:false}}
+    const model=applyLearningFromSession(emptyLearningModel(),structured)
+    const routine=Object.values(model.routineContexts)[0]
+    expect(routine.preferredMainCount).toBe(4)
+    expect(routine.preferredSets).toBe(3)
+    expect(routine.averageCompletionRate).toBe(1)
+  })
 })

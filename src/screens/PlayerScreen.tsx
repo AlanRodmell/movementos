@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { exerciseById, exerciseVideoUrl } from '../data/exercises'
-import { adjustPlanPrescription, movementRole, scalePlanExercise, swapPlanExercise } from '../domain/engine'
+import { adjustPlanPrescription, learningContextKey, movementRole, scalePlanExercise, swapPlanExercise } from '../domain/engine'
 import type { ActiveSession, AppState, Category, Exercise, ExerciseFeedback, ExercisePerformance, Goal, LearningContext, MuscleArea, SessionExercise, WorkoutAction, WorkoutActionType, WorkoutExercise, WorkoutSession } from '../domain/types'
 
 const GET_READY_SECONDS=5
@@ -31,7 +31,7 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   const nextItem=plan.exercises[index+1]
   const nextExercise=nextItem?exerciseById.get(nextItem.exerciseId)??customExercises.find(item=>item.id===nextItem.exerciseId):undefined
   const restDuration=restSecondsForGoal(plan.goal)
-  const contextFor=(item:WorkoutExercise,resolved?:Exercise):LearningContext=>({key:`${plan.goal}|${plan.intention}|${item.section}|${item.slotKey??movementRole(resolved!) }|${plan.focusAreas[0]??'full_body'}`,goal:plan.goal,intention:plan.intention,section:item.section,role:resolved?movementRole(resolved):undefined,focusArea:plan.focusAreas[0]})
+  const contextFor=(item:WorkoutExercise,resolved?:Exercise):LearningContext=>{const focusAreas=plan.focusAreas.length?plan.focusAreas:['full_body' as const];return{key:learningContextKey(plan.goal,plan.intention,item.section,item.slotKey??movementRole(resolved!),focusAreas),goal:plan.goal,intention:plan.intention,section:item.section,role:resolved?movementRole(resolved):undefined,focusArea:focusAreas[0],focusAreas}}
   const recordAction=(type:WorkoutActionType,item:WorkoutExercise=current,resolved:Exercise|undefined=exercise,replacementExerciseId?:string)=>{
     if(!item||!resolved)return
     const next:WorkoutAction={id:`action_${Date.now()}_${type}_${index}`,type,exerciseId:resolved.id,replacementExerciseId,occurrenceIndex:index,at:new Date().toISOString(),context:contextFor(item,resolved)}
@@ -126,6 +126,7 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   const finish=(rating:WorkoutSession['rating'])=>onComplete({
     id:`session_${Date.now()}`,planName:plan.name,date:new Date().toISOString(),durationSeconds:Math.max(1,Math.round((Date.now()-session.startedAt)/1000)),intention:plan.intention,goal:plan.goal,rating,
     completedExerciseIds:completed,exercises:reviewRows(),focus:plan.focusAreas,areaLoadBefore,actions,balanceReport:plan.balanceReport,
+    planStructure:{targetDurationMinutes:plan.targetDurationMinutes??plan.durationMinutes,mainExerciseCount:new Set(plan.exercises.filter(item=>item.section==='Main work').map(item=>item.exerciseId)).size,totalSets:Math.max(0,...plan.exercises.filter(item=>item.section==='Main work').map(item=>item.totalSets??1)),includeWarmup:plan.exercises.some(item=>item.section==='Prepare'),includeConditioning:plan.exercises.some(item=>item.section==='Condition')},
   })
   const exitButton=<button className="player-exit" onClick={()=>confirm('End this session without saving?')&&onExit()}>← End session</button>
 

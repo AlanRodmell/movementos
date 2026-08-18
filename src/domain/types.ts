@@ -143,6 +143,11 @@ export interface ExercisePerformance {
   loadUnit?: 'kg' | 'lbs'
 }
 
+export interface ExercisePerformanceSample extends ExercisePerformance {
+  at: string
+  prescription: string
+}
+
 export interface SessionExercise {
   id: string
   name: string
@@ -173,6 +178,15 @@ export interface WorkoutSession {
   areaLoadBefore: Partial<Record<Category, number>>
   actions?: WorkoutAction[]
   balanceReport?: BalanceReport
+  planStructure?: PlanStructure
+}
+
+export interface PlanStructure {
+  targetDurationMinutes: number
+  mainExerciseCount: number
+  totalSets: number
+  includeWarmup: boolean
+  includeConditioning: boolean
 }
 
 export interface ExerciseStat {
@@ -214,6 +228,7 @@ export interface LearningContext {
   section: WorkoutExercise['section']
   role?: MovementRole
   focusArea?: MuscleArea
+  focusAreas?: MuscleArea[]
 }
 
 export interface ContextLearningStat {
@@ -268,6 +283,8 @@ export interface ExerciseLearningEntry {
   contexts: Record<string, ContextLearningStat>
   successfulPerformances: number
   lastPerformance?: ExercisePerformance
+  performanceHistory?: ExercisePerformanceSample[]
+  lastDiscomfortAt?: string | null
   progressionStatus: ProgressionStatus
   progressionEvidenceAt: number
   currentPrescription?: string
@@ -301,6 +318,12 @@ export interface RoutineLearningStat {
   negative: number
   evidence: number
   lastUpdatedAt: string
+  preferredMainCount?: number
+  preferredSets?: number
+  averageCompletionRate?: number
+  averageDurationRatio?: number
+  warmupAffinity?: number
+  conditioningAffinity?: number
 }
 
 export interface BuilderPreferences {

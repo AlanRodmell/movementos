@@ -27,6 +27,8 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   const [performance,setPerformance]=useState<Record<string,ExercisePerformance>>({})
   const [issueDrafts,setIssueDrafts]=useState<Record<string,IssueDraft>>({})
   const [createdIssueIds,setCreatedIssueIds]=useState<string[]>([])
+  const [modifyOpen,setModifyOpen]=useState(false)
+  const [changeNotice,setChangeNotice]=useState('')
   const deadline=useRef(session.running&&session.deadlineAt?session.deadlineAt:Date.now()+initialRemaining*1000)
   const current=plan.exercises[index]
   const exercise=current?exerciseById.get(current.exerciseId)??customExercises.find(item=>item.id===current.exerciseId):undefined
@@ -34,11 +36,9 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   const nextExercise=nextItem?exerciseById.get(nextItem.exerciseId)??customExercises.find(item=>item.id===nextItem.exerciseId):undefined
   const restDuration=restSecondsForGoal(plan.goal)
   const isPersonalised=Boolean(current?.adjusted||current?.scaled)
-  const targetAreas=exercise?[...new Set([...exercise.primaryMuscles,...exercise.secondaryMuscles])].slice(0,3).map(displayArea):[]
   const matchingIssue=exercise?state.issues.find(issue=>issue.status==='active'&&(exerciseMatchesArea(exercise,issue.area)||exercise.contraindications.includes(issue.area))):undefined
   const matchingCheckInArea=exercise&&state.dailyCheckIn.date===new Date().toDateString()?state.dailyCheckIn.tightAreas.find(area=>exerciseMatchesArea(exercise,area)||exercise.contraindications.includes(area)):undefined
-  const adjustmentContext=matchingIssue?`${matchingIssue.side==='bilateral'?'Both / centre':matchingIssue.side[0].toUpperCase()+matchingIssue.side.slice(1)} ${bodyAreaLabel(matchingIssue.area).toLowerCase()} · ${matchingIssue.severity==='flare'?'flare-up':`${matchingIssue.severity} sensitivity`}`:matchingCheckInArea?`${bodyAreaLabel(matchingCheckInArea)} flagged in today’s check-in`:current?.scaled?`${current.scaled==='down'?'Easier':'Harder'} level selected`:'Adjusted for today’s session'
-  const adaptationLabel=current?.scaled==='down'?'Easier level selected':current?.scaled==='up'?'Harder level selected':current?.adjusted?'Prescription adapted for today':''
+  const adjustmentContext=matchingIssue?`For today: ${matchingIssue.side==='bilateral'?'Both / centre':matchingIssue.side[0].toUpperCase()+matchingIssue.side.slice(1)} ${bodyAreaLabel(matchingIssue.area).toLowerCase()} · ${matchingIssue.severity==='flare'?'flare-up':`${matchingIssue.severity} sensitivity`}`:matchingCheckInArea?`Based on today’s check-in: ${displayArea(matchingCheckInArea)}`:current?.scaled?`${current.scaled==='down'?'Easier':'Harder'} level selected`:'Adjusted for today’s session'
   const displayedPrescription=current?.prescription.replace(/🩹|🎯/gu,'').trim()
   const contextFor=(item:WorkoutExercise,resolved?:Exercise):LearningContext=>{const focusAreas=plan.focusAreas.length?plan.focusAreas:['full_body' as const];return{key:learningContextKey(plan.goal,plan.intention,item.section,item.slotKey??movementRole(resolved!),focusAreas),goal:plan.goal,intention:plan.intention,section:item.section,role:resolved?movementRole(resolved):undefined,focusArea:focusAreas[0],focusAreas}}
   const recordAction=(type:WorkoutActionType,item:WorkoutExercise=current,resolved:Exercise|undefined=exercise,replacementExerciseId?:string)=>{
@@ -107,8 +107,11 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
     playWorkoutCue()
   },[phase,remaining,running,soundEnabled])
 
-  const pause=()=>{
+  const pauseForSecondaryAction=()=>{
     if(running){setRemaining(Math.max(0,Math.ceil((deadline.current-Date.now())/1000)));setRunning(false)}
+  }
+  const pause=()=>{
+    if(running){pauseForSecondaryAction()}
     else{deadline.current=Date.now()+remaining*1000;setRunning(true)}
   }
   const logAndContinue=()=>completeWorkPhase(true)
@@ -162,8 +165,59 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   if(phase==='rest')return <div className="player-screen"><div className="player-top"><span>REST</span><strong>{index+1} / {plan.exercises.length}</strong></div><div className="player-progress"><i style={{width:`${progress}%`}}/></div><section className="player-centre rest-phase"><span className="eyebrow">REST BLOCK</span><h1>Recover</h1><div className="timer">{formatTime(remaining)}</div><div className="player-next-card"><small>STARTS AUTOMATICALLY</small><strong>{nextExercise?.name??'Session complete'}</strong></div></section><div className="player-actions"><button className="primary" onClick={skip}>Skip rest <span>→</span></button><div><button className="secondary" onClick={pause}>{running?'Pause rest':'Resume rest'}</button></div>{exitButton}</div></div>
 
   const changePlan=(next:typeof plan)=>{setPlan(next);const changed=next.exercises[index];const seconds=workSeconds(changed,phase);setRemaining(seconds);deadline.current=Date.now()+seconds*1000}
-  const changeDifficulty=(direction:-1|1)=>{const next=scalePlanExercise(plan,index,direction,state);if(next!==plan)recordAction(direction<0?'easier':'harder');changePlan(next)}
-  const changePrescription=(direction:-1|1)=>{recordAction(direction<0?'prescription_down':'prescription_up');changePlan(adjustPlanPrescription(plan,index,direction))}
-  const swap=()=>{const original=current;const originalExercise=exercise;const next=swapPlanExercise(plan,index,state);const replacement=next.exercises[index];if(next!==plan&&replacement.exerciseId!==original.exerciseId){recordAction('swapped_out',original,originalExercise,replacement.exerciseId);const resolved=exerciseById.get(replacement.exerciseId)??customExercises.find(item=>item.id===replacement.exerciseId);recordAction('swapped_in',replacement,resolved,original.exerciseId)}changePlan(next)}
-  return <div className={`player-screen ${isPersonalised?'player-personalised':''}`} onPointerDownCapture={()=>soundEnabled&&unlockWorkoutAudio()}>{isPersonalised&&<div className="player-adaptive-banner"><span aria-hidden="true">✦</span><div><strong>{current.adjusted?'PERSONALISED FOR TODAY':'ADJUSTED BY YOU'}</strong><small>{adjustmentContext}</small></div></div>}<div className="player-top"><span>{current.section}{current.setNumber?` · Set ${current.setNumber}/${current.totalSets}`:''}</span><strong>{index+1} / {plan.exercises.length}</strong></div><div className="player-progress"><i style={{width:`${progress}%`}}/></div><section className={`player-centre ${isPersonalised?'player-centre-personalised':''} ${current.scaled==='down'?'easier-adjusted':current.scaled==='up'?'harder-adjusted':''}`}><span className="eyebrow">{phase==='switch_sides'?'SIDE 2':current.section.toUpperCase()}</span><h1>{exercise.name}{phase==='switch_sides'?' · Side 2':''}</h1><div className="player-exercise-meta"><div><strong>TARGET AREAS</strong><span>{targetAreas.join(' · ')}</span></div>{isPersonalised&&<div className="adaptation"><strong>ADAPTATION</strong><span>{adaptationLabel}</span></div>}</div><p>{exercise.description}</p><a className="player-video-link" href={exerciseVideoUrl(exercise)} target="_blank" rel="noopener noreferrer">▶ Watch video</a><div className={remaining===0?'timer complete':'timer'}>{formatTime(remaining)}</div><strong className="player-prescription">{displayedPrescription}</strong>{isPersonalised?<details className="player-learning-strip"><summary><span>We’ll learn from how this feels today.</span><b>View change</b></summary><p>{current.rationale}</p></details>:<small>{current.rationale}</small>}<div className="player-adjustments"><button onClick={()=>changeDifficulty(-1)}>Easier</button><button onClick={()=>changeDifficulty(1)}>Harder</button><button onClick={()=>changePrescription(-1)}>− reps/time</button><button onClick={()=>changePrescription(1)}>+ reps/time</button><button onClick={swap}>Swap</button></div></section><div className="player-actions"><button className="primary" onClick={logAndContinue}>{phase==='work'&&isBilateral(current)?'Log side & continue':index===plan.exercises.length-1?'Complete session':'Log & continue'} <span>→</span></button><div><button className="secondary" onClick={pause}>{running?'Pause':'Resume'}</button><button className="secondary" onClick={skip}>Skip</button></div>{exitButton}</div></div>
+  const changeDifficulty=(direction:-1|1)=>{
+    const next=scalePlanExercise(plan,index,direction,state)
+    if(next===plan){setChangeNotice(`No ${direction<0?'easier':'harder'} option is available for this exercise.`);return}
+    recordAction(direction<0?'easier':'harder')
+    changePlan(next)
+    setChangeNotice(`Updated for today. We’ll remember that you chose a ${direction<0?'easier':'harder'} option.`)
+  }
+  const changePrescription=(direction:-1|1)=>{
+    recordAction(direction<0?'prescription_down':'prescription_up')
+    changePlan(adjustPlanPrescription(plan,index,direction))
+    setChangeNotice('Updated for today. We’ll remember this prescription change.')
+  }
+  const swap=()=>{
+    const original=current
+    const originalExercise=exercise
+    const next=swapPlanExercise(plan,index,state)
+    const replacement=next.exercises[index]
+    if(next===plan||replacement.exerciseId===original.exerciseId){setChangeNotice('No suitable swap is available for this exercise.');return}
+    recordAction('swapped_out',original,originalExercise,replacement.exerciseId)
+    const resolved=exerciseById.get(replacement.exerciseId)??customExercises.find(item=>item.id===replacement.exerciseId)
+    recordAction('swapped_in',replacement,resolved,original.exerciseId)
+    changePlan(next)
+    setChangeNotice('Exercise swapped for today. We’ll remember this choice.')
+  }
+  const openModify=()=>{pauseForSecondaryAction();setChangeNotice('');setModifyOpen(true)}
+  return <div className={`player-screen ${isPersonalised?'player-personalised':''}`} onPointerDownCapture={()=>soundEnabled&&unlockWorkoutAudio()}>
+    {isPersonalised&&<div className="player-adaptive-banner"><span aria-hidden="true">✦</span><div><strong>{current.adjusted?'PERSONALISED FOR TODAY':'ADJUSTED BY YOU'}</strong><small>{adjustmentContext}</small></div></div>}
+    <div className="player-top"><span>{current.section}{current.setNumber?` · Set ${current.setNumber}/${current.totalSets}`:''}</span><strong>{index+1} / {plan.exercises.length}</strong></div>
+    <div className="player-progress"><i style={{width:`${progress}%`}}/></div>
+    <section className={`player-centre player-exercise-centre ${isPersonalised?'player-centre-personalised':''} ${current.scaled==='down'?'easier-adjusted':current.scaled==='up'?'harder-adjusted':''}`}>
+      {phase==='switch_sides'&&<span className="eyebrow">SIDE 2</span>}
+      <h1>{exercise.name}{phase==='switch_sides'?' · Side 2':''}</h1>
+      <div className="player-guidance">
+        <p className="player-cue">{exercise.description}</p>
+        <a className="player-video-link" href={exerciseVideoUrl(exercise)} target="_blank" rel="noopener noreferrer" onClick={pauseForSecondaryAction}>▶ Watch demo</a>
+      </div>
+      <div className={remaining===0?'timer complete':'timer'}>{formatTime(remaining)}</div>
+      <strong className="player-prescription">{displayedPrescription}</strong>
+      {!isPersonalised&&<small className="player-rationale">{current.rationale}</small>}
+      <button className="player-modify-trigger" type="button" onClick={openModify}>Modify exercise <span aria-hidden="true">›</span></button>
+    </section>
+    <div className="player-actions"><button className="primary" onClick={logAndContinue}>{phase==='work'&&isBilateral(current)?'Log side & continue':index===plan.exercises.length-1?'Complete session':'Log & continue'} <span>→</span></button><div><button className="secondary" onClick={pause}>{running?'Pause':'Resume'}</button><button className="secondary" onClick={skip}>Skip</button></div>{exitButton}</div>
+    {modifyOpen&&<div className="player-modify-backdrop" onPointerDown={()=>setModifyOpen(false)}>
+      <section className="player-modify-sheet" role="dialog" aria-modal="true" aria-labelledby="modify-exercise-title" onPointerDown={event=>event.stopPropagation()}>
+        <span className="player-sheet-grabber" aria-hidden="true"/>
+        <header><div><span className="eyebrow">MODIFY EXERCISE</span><h2 id="modify-exercise-title">Make it work for today</h2></div><button className="player-modify-close" type="button" aria-label="Close modify exercise" onClick={()=>setModifyOpen(false)}>×</button></header>
+        <p>The timer is paused while you make a change.</p>
+        <div className="player-modify-grid"><button type="button" onClick={()=>changeDifficulty(-1)}>Make easier</button><button type="button" onClick={()=>changeDifficulty(1)}>Make harder</button></div>
+        <div className="player-prescription-adjuster"><button type="button" aria-label="Reduce reps or time" onClick={()=>changePrescription(-1)}>−</button><div><small>CURRENT PRESCRIPTION</small><strong>{displayedPrescription}</strong></div><button type="button" aria-label="Increase reps or time" onClick={()=>changePrescription(1)}>+</button></div>
+        <button className="player-swap-action" type="button" onClick={swap}>Swap exercise</button>
+        {changeNotice&&<p className="player-change-notice" role="status">{changeNotice}</p>}
+        <button className="primary player-modify-done" type="button" onClick={()=>setModifyOpen(false)}>Done</button>
+      </section>
+    </div>}
+  </div>
 }

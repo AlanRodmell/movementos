@@ -528,6 +528,29 @@ function estimatedPlanMinutes(items: WorkoutExercise[]) {
   return Math.max(1, Math.round(seconds / 60))
 }
 
+export type MovementPosition = 'standing' | 'bent' | 'supported' | 'floor'
+
+export function movementPosition(exercise:Exercise):MovementPosition {
+  const text=`${exercise.name} ${exercise.pattern} ${exercise.description}`.toLowerCase()
+  if(/\b(floor|lying|lie down|supine|prone|plank|push[- ]?up|mountain[- ]climber|dead[- ]bug|bird[- ]dog|bear[- ]crawl|crunch|sit[- ]?up|v[- ]?up|hollow|superman|clamshell|glute[- ]bridge|hip[- ]bridge|leg[- ]raise|inverted[- ]row|bench[- ]press|quadruped|all fours|downward[- ]dog|cobra|sphinx|child.?s pose|pigeon)\b/.test(text))return'floor'
+  if(/\b(seated|sitting|kneeling|half[- ]kneeling|tall kneeling|chest[- ]supported|bench[- ]supported)\b/.test(text))return'supported'
+  if(/\b(hinge|deadlift|good morning|bent[- ]over|forward fold|toe touch|kettlebell swing)\b/.test(text))return'bent'
+  return'standing'
+}
+
+export function orderWorkoutExercisesForFlow(items:WorkoutExercise[],state:AppState) {
+  const ordered=[...items]
+  const groupKey=(item:WorkoutExercise)=>`${item.section}|${item.setNumber??0}`
+  const groups=[...new Set(items.map(groupKey))]
+  const rank=(item:WorkoutExercise)=>{const exercise=resolveExercise(item.exerciseId,state);if(!exercise)return 4;if(exercise.category==='mindfulness')return 5;return({standing:0,bent:1,supported:2,floor:3})[movementPosition(exercise)]}
+  groups.forEach(key=>{
+    const indexes=items.map((item,index)=>groupKey(item)===key?index:-1).filter(index=>index>=0)
+    const values=indexes.map((index,position)=>({item:items[index],position})).sort((a,b)=>rank(a.item)-rank(b.item)||a.position-b.position).map(value=>value.item)
+    indexes.forEach((index,position)=>{ordered[index]=values[position]})
+  })
+  return ordered
+}
+
 function buildBalanceReport(plan: WorkoutPlan, preferences: BuilderPreferences, state: AppState, expectedSlots: MovementSlot[]):BalanceReport {
   const issues: string[] = []
   const selected = plan.exercises.map(item => resolveExercise(item.exerciseId, state)).filter((item): item is Exercise => Boolean(item))
@@ -595,7 +618,8 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
   condition.forEach(exercise => planned.push(planItem(exercise, 'Condition', preferences, state)))
   ;[...restoreMovements, ...meditation].forEach(exercise => planned.push(planItem(exercise, 'Restore', preferences, state)))
 
-  const durationMinutes = estimatedPlanMinutes(planned)
+  const orderedPlan = orderWorkoutExercisesForFlow(planned,state)
+  const durationMinutes = estimatedPlanMinutes(orderedPlan)
   const focus = preferences.focusAreas.map(area => area.replaceAll('_', ' ')).join(' + ') || 'full body'
   const readiness = getReadiness(state)
   const learnedRoutine=state.learningModel.routineContexts[routineKey(preferences)]
@@ -609,7 +633,7 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
     targetDurationMinutes: desiredMinutes ?? durationMinutes,
     equipment: [...preferences.equipment],
     createdAt: new Date().toISOString(),
-    exercises: planned,
+    exercises: orderedPlan,
     focusAreas: preferences.focusAreas,
     insights: [
       preferences.intention === 'recover'
@@ -620,6 +644,7 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
       state.issues.some(issue => issue.status === 'active') ? 'Active issues were applied as safety constraints.' : 'No active issue constraints applied.',
       Object.keys(state.exerciseStats).length ? 'Exercise and movement-family history informed progression and variety.' : 'Complete and rate sessions to begin progression.',
       learnedRoutine&&learnedRoutine.evidence>=2&&learnedRoutine.confidence>.1&&(preferences.exercisesPerRound==='auto'||preferences.targetSets==='auto') ? `Automatic circuit shape reflects ${learnedRoutine.positive} positively rated session${learnedRoutine.positive===1?'':'s'} in this training context.` : 'Automatic circuit shape will adapt after repeated successful sessions.',
+      'Exercises are grouped by setup to flow from standing through supported and floor work within each section.',
       ...warnings,
     ],
   }

@@ -154,7 +154,7 @@ it('keeps the player exit action independent from the light shell back-button st
   expect(screen.getByRole('button',{name:/end session/i})).not.toHaveClass('bottom-back')
 })
 
-it('makes a personalised exercise and its target areas explicit in the player',()=>{
+it('uses one personalised explanation and keeps exercise guidance prominent',()=>{
   const plan:WorkoutPlan={id:'personalised-player',name:'Personalised player',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['upper_body'],insights:[],exercises:[{exerciseId:'x001',prescription:'8 reps 🩹',durationSeconds:30,rationale:'Reduced from 10-12 reps to protect the area flagged today.',section:'Main work',adjusted:true}]}
   const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:30,running:false,deadlineAt:null,startedAt:Date.now(),completedExerciseIds:[]}
   const state={...defaultState,issues:[{id:'left-chest',area:'chest' as const,severity:'moderate' as const,status:'active' as const,note:'Sensitive today',createdAt:new Date().toISOString(),side:'left' as const,resolvedAt:null}]}
@@ -162,18 +162,17 @@ it('makes a personalised exercise and its target areas explicit in the player',(
 
   expect(container.querySelector('.player-screen')).toHaveClass('player-personalised')
   expect(screen.getByText('PERSONALISED FOR TODAY')).toBeInTheDocument()
-  expect(screen.getByText('Left chest · moderate sensitivity')).toBeInTheDocument()
-  expect(screen.getByText('TARGET AREAS')).toBeInTheDocument()
-  expect(screen.getByText('Chest · Triceps')).toBeInTheDocument()
-  expect(screen.getByText('Prescription adapted for today')).toBeInTheDocument()
+  expect(screen.getByText('For today: Left chest · moderate sensitivity')).toBeInTheDocument()
+  expect(screen.queryByText('TARGET AREAS')).not.toBeInTheDocument()
+  expect(screen.queryByText('Chest · Triceps')).not.toBeInTheDocument()
   expect(screen.getByText('8 reps')).toBeInTheDocument()
   expect(screen.queryByText(/🩹/)).not.toBeInTheDocument()
-  expect(screen.getByText('We’ll learn from how this feels today.')).toBeInTheDocument()
-  const disclosure=container.querySelector('.player-learning-strip') as HTMLDetailsElement
-  expect(disclosure.open).toBe(false)
-  fireEvent.click(screen.getByText('View change'))
-  expect(disclosure.open).toBe(true)
-  expect(screen.getByText('Reduced from 10-12 reps to protect the area flagged today.')).toBeInTheDocument()
+  expect(screen.queryByText('ADAPTATION')).not.toBeInTheDocument()
+  expect(screen.queryByText('Prescription adapted for today')).not.toBeInTheDocument()
+  expect(screen.queryByText('We’ll learn from how this feels today.')).not.toBeInTheDocument()
+  expect(screen.getByText('Press dumbbells from the floor, pausing softly as the upper arms touch down.')).toHaveClass('player-cue')
+  expect(screen.getByRole('link',{name:/watch demo/i})).toBeInTheDocument()
+  expect(screen.getAllByText(/main work/i)).toHaveLength(1)
 })
 
 it('explains an automatic daily check-in adaptation without requiring an active issue',()=>{
@@ -182,9 +181,9 @@ it('explains an automatic daily check-in adaptation without requiring an active 
   const state={...defaultState,dailyCheckIn:{date:new Date().toDateString(),tightAreas:['shoulders' as const],primaryArea:'shoulders' as const}}
   render(<PlayerScreen session={session} state={state} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
 
-  expect(screen.getByText('Shoulders flagged in today’s check-in')).toBeInTheDocument()
-  expect(screen.getByText('Shoulders · Triceps')).toBeInTheDocument()
-  expect(screen.getByText('Prescription adapted for today')).toBeInTheDocument()
+  expect(screen.getByText('Based on today’s check-in: Shoulders')).toBeInTheDocument()
+  expect(screen.queryByText('Shoulders · Triceps')).not.toBeInTheDocument()
+  expect(screen.queryByText('Prescription adapted for today')).not.toBeInTheDocument()
 })
 
 it.each([
@@ -201,7 +200,7 @@ it.each([
   expect(screen.queryByText('RECOVERY ADJUSTED')).not.toBeInTheDocument()
 })
 
-it('adds target areas without changing the ordinary unadjusted player state',()=>{
+it('keeps the ordinary unadjusted player state uncluttered',()=>{
   const plan:WorkoutPlan={id:'ordinary-player',name:'Ordinary player',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['upper_body'],insights:[],exercises:[{exerciseId:'x001',prescription:'10 reps',durationSeconds:30,rationale:'Balanced push volume.',section:'Main work'}]}
   const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:30,running:false,deadlineAt:null,startedAt:Date.now(),completedExerciseIds:[]}
   const {container}=render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
@@ -210,12 +209,33 @@ it('adds target areas without changing the ordinary unadjusted player state',()=
   expect(screen.queryByText('PERSONALISED FOR TODAY')).not.toBeInTheDocument()
   expect(screen.queryByText('ADAPTATION')).not.toBeInTheDocument()
   expect(screen.queryByText('We’ll learn from how this feels today.')).not.toBeInTheDocument()
-  expect(screen.getByText('TARGET AREAS')).toBeInTheDocument()
-  expect(screen.getByText('Chest · Triceps')).toBeInTheDocument()
+  expect(screen.queryByText('TARGET AREAS')).not.toBeInTheDocument()
+  expect(screen.queryByText('Chest · Triceps')).not.toBeInTheDocument()
   expect(screen.getByText('Balanced push volume.')).toBeInTheDocument()
   expect(screen.getByRole('button',{name:/complete session/i})).toBeEnabled()
   expect(screen.getByRole('button',{name:'Resume'})).toBeEnabled()
   expect(screen.getByRole('button',{name:'Skip'})).toBeEnabled()
+})
+
+it('pauses the workout and progressively discloses modification controls',()=>{
+  const startedAt=Date.now()
+  const plan:WorkoutPlan={id:'modify-player',name:'Modify player',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['upper_body'],insights:[],exercises:[{exerciseId:'x001',prescription:'10 reps',durationSeconds:30,rationale:'Balanced push volume.',section:'Main work'}]}
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:30,running:true,deadlineAt:startedAt+30000,startedAt,completedExerciseIds:[]}
+  render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+
+  expect(screen.queryByRole('button',{name:'Make easier'})).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button',{name:'Modify exercise'}))
+  expect(screen.getByRole('dialog',{name:'Make it work for today'})).toBeInTheDocument()
+  expect(screen.getByRole('button',{name:'Resume'})).toBeInTheDocument()
+  expect(screen.getByRole('button',{name:'Make easier'})).toBeInTheDocument()
+  expect(screen.getByRole('button',{name:'Make harder'})).toBeInTheDocument()
+  expect(screen.getByRole('button',{name:'Swap exercise'})).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button',{name:'Increase reps or time'}))
+  expect(screen.getAllByText('11 reps')).toHaveLength(2)
+  expect(screen.getByRole('status')).toHaveTextContent('We’ll remember this prescription change.')
+  fireEvent.click(screen.getByRole('button',{name:'Done'}))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })
 
 it('keeps personalised workout chrome out of get-ready and rest phase screens',()=>{
@@ -247,7 +267,7 @@ it('removes the personalised treatment when an adjusted exercise advances to an 
   act(()=>vi.advanceTimersByTime(15000))
   expect(screen.getByRole('heading',{name:'Dumbbell Bench Press'})).toBeInTheDocument()
   expect(screen.queryByText('PERSONALISED FOR TODAY')).not.toBeInTheDocument()
-  expect(screen.getByText('Chest · Triceps')).toBeInTheDocument()
+  expect(screen.queryByText('Chest · Triceps')).not.toBeInTheDocument()
   expect(screen.getByText('0:02')).toBeInTheDocument()
   vi.useRealTimers()
 })

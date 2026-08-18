@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { exerciseById, exerciseVideoUrl } from '../data/exercises'
 import { adjustPlanPrescription, learningContextKey, movementRole, scalePlanExercise, swapPlanExercise } from '../domain/engine'
 import type { ActiveSession, AppState, Category, Exercise, ExerciseFeedback, ExercisePerformance, Goal, LearningContext, MuscleArea, SessionExercise, WorkoutAction, WorkoutActionType, WorkoutExercise, WorkoutSession } from '../domain/types'
+import { playWorkoutCue, unlockWorkoutAudio } from '../audio/workoutAudio'
 
-const GET_READY_SECONDS=5
 const formatTime=(seconds:number)=>`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`
 const isBilateral=(item:WorkoutExercise)=>/side|each|leg|arm/i.test(item.prescription)
 const workSeconds=(item:WorkoutExercise,phase:ActiveSession['phase'])=>phase==='switch_sides'||isBilateral(item)?Math.max(1,Math.round(item.durationSeconds/2)):item.durationSeconds
@@ -70,16 +70,21 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
     if(phase==='work'||phase==='switch_sides'){completeWorkPhase();return}
     if(phase==='rest')startNextExercise()
   }
+  const onPhaseCompleteRef=useRef(onPhaseComplete)
+  onPhaseCompleteRef.current=onPhaseComplete
 
   useEffect(()=>{
     if(!running||finished)return
-    const timer=window.setInterval(()=>setRemaining(Math.max(0,Math.ceil((deadline.current-Date.now())/1000))),250)
-    return()=>window.clearInterval(timer)
-  },[finished,index,phase,running])
-
-  useEffect(()=>{
-    if(remaining===0&&running&&!finished)onPhaseComplete()
-  },[finished,remaining,running])
+    const updateRemaining=()=>setRemaining(Math.max(0,Math.ceil((deadline.current-Date.now())/1000)))
+    updateRemaining()
+    const timer=window.setInterval(updateRemaining,250)
+    const phaseEnd=window.setTimeout(()=>{
+      window.clearInterval(timer)
+      if(soundEnabled&&(phase==='work'||phase==='switch_sides'||phase==='rest'))playWorkoutCue(true)
+      onPhaseCompleteRef.current()
+    },Math.max(0,deadline.current-Date.now()))
+    return()=>{window.clearInterval(timer);window.clearTimeout(phaseEnd)}
+  },[finished,index,phase,running,soundEnabled])
 
   useEffect(()=>{
     if(finished)return
@@ -89,13 +94,8 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   useEffect(()=>{
     const isCountdownPhase=phase==='work'||phase==='switch_sides'||phase==='rest'
     const isFinalCountdown=remaining>=1&&remaining<=5&&isCountdownPhase
-    if((remaining!==0&&!isFinalCountdown)||!running||!soundEnabled)return
-    try{
-      const AudioContextClass=window.AudioContext||(window as typeof window&{webkitAudioContext?:typeof AudioContext}).webkitAudioContext
-      if(!AudioContextClass)return
-      const context=new AudioContextClass();const oscillator=context.createOscillator();const gain=context.createGain()
-      oscillator.frequency.value=remaining===0?880:660;gain.gain.value=.08;oscillator.connect(gain);gain.connect(context.destination);oscillator.start();oscillator.stop(context.currentTime+(remaining===0?.18:.1))
-    }catch{/* Audio may be blocked until interaction. */}
+    if(!isFinalCountdown||!running||!soundEnabled)return
+    playWorkoutCue()
   },[phase,remaining,running,soundEnabled])
 
   const pause=()=>{
@@ -145,7 +145,7 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   if(finished&&ratingStage)return <div className="player-screen finish-screen"><span className="finish-symbol">✓</span><span className="eyebrow">SESSION COMPLETE</span><h1>{completed.length} of {plan.exercises.length} movements</h1><p>How did today’s session feel overall?</p><div className="rating-grid">{(['easy','good','hard','brutal'] as const).map(rating=><button key={rating} onClick={()=>finish(rating)}><span>{rating==='easy'?'○':rating==='good'?'●':rating==='hard'?'▲':'◆'}</span>{rating}</button>)}</div><button className="text-button" onClick={()=>finish('unrated')}>Finish without overall rating</button></div>
   if(!current||!exercise)return null
 
-  if(phase==='get_ready')return <div className="player-screen player-phase-screen"><section className="player-phase-card"><span className="phase-symbol">⏳</span><span className="eyebrow">GET READY</span><h1>Workout begins in</h1><div className="timer">{remaining}</div><p>First up: <strong>{exercise.name}</strong></p></section>{exitButton}</div>
+  if(phase==='get_ready')return <div className="player-screen player-phase-screen" onPointerDownCapture={()=>soundEnabled&&unlockWorkoutAudio()}><section className="player-phase-card"><span className="phase-symbol">⏳</span><span className="eyebrow">GET READY</span><h1>Workout begins in</h1><div className="timer">{remaining}</div><p>First up: <strong>{exercise.name}</strong></p></section>{exitButton}</div>
 
   if(phase==='waiting')return <div className="player-screen player-phase-screen"><section className="player-phase-card"><span className="phase-symbol">✓</span><span className="eyebrow">MOVEMENT COMPLETE</span><h1>Nice work</h1><p>Take your time. Log the movement when you’re ready to continue.</p><div className="player-next-card"><small>UP NEXT</small><strong>{nextExercise?`${restDuration} sec rest, then ${nextExercise.name}`:'Session complete'}</strong></div></section><div className="player-actions"><button className="primary" onClick={()=>startPhase('rest',restDuration,true)}>Log &amp; continue <span>→</span></button>{exitButton}</div></div>
 
@@ -156,5 +156,5 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   const changeDifficulty=(direction:-1|1)=>{const next=scalePlanExercise(plan,index,direction,state);if(next!==plan)recordAction(direction<0?'easier':'harder');changePlan(next)}
   const changePrescription=(direction:-1|1)=>{recordAction(direction<0?'prescription_down':'prescription_up');changePlan(adjustPlanPrescription(plan,index,direction))}
   const swap=()=>{const original=current;const originalExercise=exercise;const next=swapPlanExercise(plan,index,state);const replacement=next.exercises[index];if(next!==plan&&replacement.exerciseId!==original.exerciseId){recordAction('swapped_out',original,originalExercise,replacement.exerciseId);const resolved=exerciseById.get(replacement.exerciseId)??customExercises.find(item=>item.id===replacement.exerciseId);recordAction('swapped_in',replacement,resolved,original.exerciseId)}changePlan(next)}
-  return <div className="player-screen"><div className="player-top"><span>{current.section}{current.setNumber?` · Set ${current.setNumber}/${current.totalSets}`:''}</span><strong>{index+1} / {plan.exercises.length}</strong></div><div className="player-progress"><i style={{width:`${progress}%`}}/></div><section className={`player-centre ${current.scaled==='down'?'easier-adjusted':current.scaled==='up'?'harder-adjusted':''}`}><span className="eyebrow">{phase==='switch_sides'?'SIDE 2':current.scaled==='down'?'EASIER ADJUSTED':current.scaled==='up'?'HARDER ADJUSTED':current.adjusted?'RECOVERY ADJUSTED':current.section.toUpperCase()}</span><h1>{exercise.name}{phase==='switch_sides'?' · Side 2':''}</h1><p>{exercise.description}</p><a className="player-video-link" href={exerciseVideoUrl(exercise)} target="_blank" rel="noopener noreferrer">▶ Watch video</a><div className={remaining===0?'timer complete':'timer'}>{formatTime(remaining)}</div><strong className="player-prescription">{current.prescription}</strong><small>{current.rationale}</small><div className="player-adjustments"><button onClick={()=>changeDifficulty(-1)}>Easier</button><button onClick={()=>changeDifficulty(1)}>Harder</button><button onClick={()=>changePrescription(-1)}>− reps/time</button><button onClick={()=>changePrescription(1)}>+ reps/time</button><button onClick={swap}>Swap</button></div></section><div className="player-actions"><button className="primary" onClick={logAndContinue}>{phase==='work'&&isBilateral(current)?'Log side & continue':index===plan.exercises.length-1?'Complete session':'Log & continue'} <span>→</span></button><div><button className="secondary" onClick={pause}>{running?'Pause':'Resume'}</button><button className="secondary" onClick={skip}>Skip</button></div>{exitButton}</div></div>
+  return <div className="player-screen" onPointerDownCapture={()=>soundEnabled&&unlockWorkoutAudio()}><div className="player-top"><span>{current.section}{current.setNumber?` · Set ${current.setNumber}/${current.totalSets}`:''}</span><strong>{index+1} / {plan.exercises.length}</strong></div><div className="player-progress"><i style={{width:`${progress}%`}}/></div><section className={`player-centre ${current.scaled==='down'?'easier-adjusted':current.scaled==='up'?'harder-adjusted':''}`}><span className="eyebrow">{phase==='switch_sides'?'SIDE 2':current.scaled==='down'?'EASIER ADJUSTED':current.scaled==='up'?'HARDER ADJUSTED':current.adjusted?'RECOVERY ADJUSTED':current.section.toUpperCase()}</span><h1>{exercise.name}{phase==='switch_sides'?' · Side 2':''}</h1><p>{exercise.description}</p><a className="player-video-link" href={exerciseVideoUrl(exercise)} target="_blank" rel="noopener noreferrer">▶ Watch video</a><div className={remaining===0?'timer complete':'timer'}>{formatTime(remaining)}</div><strong className="player-prescription">{current.prescription}</strong><small>{current.rationale}</small><div className="player-adjustments"><button onClick={()=>changeDifficulty(-1)}>Easier</button><button onClick={()=>changeDifficulty(1)}>Harder</button><button onClick={()=>changePrescription(-1)}>− reps/time</button><button onClick={()=>changePrescription(1)}>+ reps/time</button><button onClick={swap}>Swap</button></div></section><div className="player-actions"><button className="primary" onClick={logAndContinue}>{phase==='work'&&isBilateral(current)?'Log side & continue':index===plan.exercises.length-1?'Complete session':'Log & continue'} <span>→</span></button><div><button className="secondary" onClick={pause}>{running?'Pause':'Resume'}</button><button className="secondary" onClick={skip}>Skip</button></div>{exitButton}</div></div>
 }

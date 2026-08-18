@@ -12,6 +12,7 @@ import { ProfileScreen } from './screens/ProfileScreen'
 import { SavedPlansScreen } from './screens/SavedPlansScreen'
 import { defaultState, loadState, saveState } from './storage/state'
 import { recordProfileSignal, respondToProgression, revertProgression } from './domain/learning'
+import { unlockWorkoutAudio } from './audio/workoutAudio'
 import './styles.css'
 
 const titles: Record<View,string> = { home: 'Home', builder: 'Build a session', plan: 'Your session', library: 'Exercise library', saved:'Saved workouts', player: 'Active session', progress: 'Progress', profile: 'Profile' }
@@ -36,6 +37,7 @@ export default function App() {
   const toggleList = (key: 'favourites'|'avoidList', id: string) => setState(current => {const active=!current.profile[key].includes(id);const updated={ ...current, profile: { ...current.profile, [key]: active ? [...current.profile[key], id] : current.profile[key].filter(item => item !== id) } };return recordProfileSignal(updated,id,key==='favourites'?'favourited':'avoided',active)})
   const startPlan = () => {
     if (!plan) return
+    if (state.profile.soundEnabled) unlockWorkoutAudio()
     const startedAt=Date.now()
     setState(current => ({ ...current, activeSession: { plan, index:0, phase:'get_ready', remainingSeconds:5, running:true, deadlineAt:startedAt + 5000, startedAt, completedExerciseIds:[] } }))
     navigate('player')

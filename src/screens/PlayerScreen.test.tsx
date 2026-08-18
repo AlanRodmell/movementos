@@ -2,6 +2,9 @@ import { act,fireEvent,render,screen } from '@testing-library/react'
 import { defaultState } from '../storage/state'
 import type { ActiveSession,WorkoutPlan } from '../domain/types'
 import { PlayerScreen,restSecondsForGoal } from './PlayerScreen'
+import { resetWorkoutAudioForTests } from '../audio/workoutAudio'
+
+afterEach(()=>resetWorkoutAudioForTests())
 
 it('adjusts rest duration to the workout objective',()=>{
   expect(restSecondsForGoal('strength')).toBe(30)
@@ -47,11 +50,34 @@ it('runs get-ready, work, waiting, rest, and the next exercise automatically',()
   vi.useRealTimers()
 })
 
+it('gives both sides their full allotted time after the get-ready countdown',()=>{
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-08-16T10:00:00Z'))
+  const startedAt=Date.now()
+  const plan:WorkoutPlan={
+    id:'bilateral-count-in',name:'Bilateral count-in',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['upper_body'],insights:[],
+    exercises:[{exerciseId:'x005',prescription:'10 each side',durationSeconds:20,rationale:'Full time per side',section:'Main work'}],
+  }
+  const session:ActiveSession={plan,index:0,phase:'get_ready',remainingSeconds:5,running:true,deadlineAt:startedAt+5000,startedAt,completedExerciseIds:[]}
+  render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+
+  act(()=>vi.advanceTimersByTime(5000))
+  expect(screen.getByRole('heading',{name:'Single-Arm Dumbbell Row'})).toBeInTheDocument()
+  expect(screen.getByText('0:10')).toBeInTheDocument()
+
+  act(()=>vi.advanceTimersByTime(10000))
+  expect(screen.getByRole('heading',{name:/Single-Arm Dumbbell Row · Side 2/})).toBeInTheDocument()
+  expect(screen.getByText('0:10')).toBeInTheDocument()
+  vi.useRealTimers()
+})
+
 it('sounds a cue for each of the final five exercise seconds',()=>{
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-08-16T10:00:00Z'))
   const oscillators:Array<{frequency:{value:number};start:ReturnType<typeof vi.fn>;stop:ReturnType<typeof vi.fn>}>=[]
+  let contextCount=0
   class MockAudioContext {
+    constructor(){contextCount+=1}
     currentTime=0
     destination={}
     createOscillator(){
@@ -78,6 +104,7 @@ it('sounds a cue for each of the final five exercise seconds',()=>{
   act(()=>vi.advanceTimersByTime(1000))
   expect(oscillators).toHaveLength(6)
   expect(oscillators.at(-1)?.frequency.value).toBe(880)
+  expect(contextCount).toBe(1)
 
   Object.defineProperty(window,'AudioContext',{configurable:true,value:originalAudioContext})
   vi.useRealTimers()
@@ -87,7 +114,9 @@ it('sounds a five-second countdown through the end of a rest phase',()=>{
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-08-16T10:00:00Z'))
   const frequencies:number[]=[]
+  let contextCount=0
   class MockAudioContext {
+    constructor(){contextCount+=1}
     currentTime=0
     destination={}
     createOscillator(){return{frequency:{set value(value:number){frequencies.push(value)}},connect:vi.fn(),start:vi.fn(),stop:vi.fn()}}
@@ -111,6 +140,7 @@ it('sounds a five-second countdown through the end of a rest phase',()=>{
   expect(frequencies).toEqual([660,660,660,660,660])
   act(()=>vi.advanceTimersByTime(1000))
   expect(frequencies.at(-1)).toBe(880)
+  expect(contextCount).toBe(1)
 
   Object.defineProperty(window,'AudioContext',{configurable:true,value:originalAudioContext})
   vi.useRealTimers()

@@ -221,6 +221,6 @@ export function recordProfileSignal(state:AppState,exerciseId:string,type:'favou
   const at=new Date().toISOString();const previous=state.learningModel.exercises[exerciseId]??emptyLearningEntry()
   const preference=type==='favourited'?(active?ema(previous.preference,1,.5):ema(previous.preference,0,.2)):(active?ema(previous.preference,-1,.35):previous.preference)
   const entry={...previous,preference,evidence:previous.evidence+1}
-  const label=`${active?'':'Removed '}${type==='favourited'?'Favourite':'Avoid'}`
+  const label=`${active?'':'Removed '}${type==='favourited'?'Staple':'Avoid'}`
   return{...state,learningModel:{...state.learningModel,exercises:{...state.learningModel.exercises,[exerciseId]:entry},events:[event(type,label,at,exerciseId),...state.learningModel.events].slice(0,MAX_LEARNING_EVENTS)}}
 }

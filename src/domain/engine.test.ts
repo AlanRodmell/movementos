@@ -1,6 +1,6 @@
 import { catalogueStats, exerciseById, exercises, exerciseVideoUrl } from '../data/exercises'
 import { defaultState } from '../storage/state'
-import { addPlanExercise, applySessionCompletion, avoidPlanExercise, createManualWorkout, exerciseMatchesArea, generateFreshWorkout, generateWorkout, getExerciseDecision, learningContextKey, movementPosition, orderWorkoutExercisesForFlow, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
+import { addPlanExercise, applySessionCompletion, avoidPlanExercise, createManualWorkout, exerciseMatchesArea, generateFreshWorkout, generateWorkout, getDailyRecommendation, getExerciseDecision, learningContextKey, movementPosition, orderWorkoutExercisesForFlow, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
 import { emptyLearningEntry } from './learning'
 import type { BuilderPreferences, WorkoutSession } from './types'
 
@@ -81,6 +81,41 @@ describe('workout engine', () => {
     const state = { ...defaultState, profile:{ ...defaultState.profile, favourites:[custom.id] }, customExercises:[custom] }
     const plan = generateWorkout(preferences, state, 'custom-seed')
     expect(plan.exercises.some(item => item.exerciseId === custom.id)).toBe(true)
+  })
+
+  it('strongly prioritises a compatible stapled exercise in suggested workouts',()=>{
+    const equipment=['none' as const,'dumbbells' as const,'bench' as const]
+    const state={...defaultState,profile:{...defaultState.profile,equipment,favourites:['x001']}}
+    for(const seed of ['staple-a','staple-b','staple-c']){
+      const plan=generateWorkout({...preferences,equipment},state,seed)
+      expect(plan.exercises.some(item=>item.exerciseId==='x001')).toBe(true)
+      expect(plan.exercises.find(item=>item.exerciseId==='x001')?.rationale).toContain('stapled by you')
+    }
+  })
+
+  it('builds an adaptive daily recommendation from readiness and feedback without a fixed duration',()=>{
+    const ready=getDailyRecommendation(defaultState)
+    expect(ready.preferences.intention).toBe('train')
+    expect(ready.preferences.durationMinutes).toBe('auto')
+    expect(ready.preferences.focusAreas).not.toEqual(['full_body'])
+    const readyPlan=generateWorkout(ready.preferences,defaultState,'daily-ready')
+    expect(readyPlan.targetDurationMinutes).toBe(readyPlan.durationMinutes)
+
+    const checkInState={...defaultState,dailyCheckIn:{date:new Date().toDateString(),tightAreas:['neck' as const],primaryArea:'neck' as const}}
+    const recovery=getDailyRecommendation(checkInState)
+    expect(recovery.preferences).toMatchObject({intention:'recover',goal:'mobility',durationMinutes:'auto',focusAreas:['neck'],includeConditioning:false,includeWarmup:false})
+    expect(recovery.reason).toContain('today’s check-in')
+    const recoveryPlan=generateWorkout(recovery.preferences,checkInState,'daily-recovery')
+    expect(recoveryPlan.targetDurationMinutes).toBe(recoveryPlan.durationMinutes)
+    expect(recoveryPlan.exercises).toHaveLength(5)
+    expect(recoveryPlan.exercises.some(item=>exerciseMatchesArea(exerciseById.get(item.exerciseId)!, 'neck'))).toBe(true)
+    expect(recoveryPlan.balanceReport?.issues.some(issue=>issue.includes('neck coverage'))).toBe(false)
+
+    const hardSession:WorkoutSession={id:'hard-feedback',planName:'Hard session',date:new Date().toISOString(),durationSeconds:600,intention:'train',goal:'strength',rating:'good',completedExerciseIds:['x001'],exercises:[{id:'x001',name:'Dumbbell Floor Press',prescription:'10 reps',durationSeconds:45,feedback:'too_hard'}],focus:['upper_body'],areaLoadBefore:{}}
+    const feedback=getDailyRecommendation({...defaultState,history:[hardSession]})
+    expect(feedback.preferences.intention).toBe('recover')
+    expect(feedback.preferences.focusAreas).toEqual(['chest'])
+    expect(feedback.reason).toContain('workout feedback')
   })
 
   it('adapts prescriptions around today’s check-in', () => {

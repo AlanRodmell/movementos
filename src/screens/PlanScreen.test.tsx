@@ -1,8 +1,22 @@
 import { act, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
 import { exerciseById } from '../data/exercises'
-import { generateWorkout } from '../domain/engine'
+import { createManualWorkout, generateWorkout } from '../domain/engine'
 import { defaultState } from '../storage/state'
 import { PlanScreen } from './PlanScreen'
+
+it('shows every library selection together before splitting them into workout sections',()=>{
+  const plan=createManualWorkout(['w1','x001','c1','m5'],defaultState)
+  const noop=vi.fn()
+  render(<PlanScreen plan={plan} customExercises={[]} isSaved={false} onStart={noop} onSave={noop} onViewSaved={noop} onRegenerate={noop} onEasier={noop} onHarder={noop} onAdjust={noop} onSwap={noop} onReorder={noop} onAdd={noop} onRemove={noop} onAvoid={noop}/>)
+
+  expect(screen.getByRole('heading',{name:'All selected movements'})).toBeInTheDocument()
+  expect(screen.getByRole('button',{name:'All selected movements, 4 exercises'})).toHaveAttribute('aria-pressed','true')
+  expect(screen.getAllByRole('listitem')).toHaveLength(4)
+  expect(screen.getByText('Jumping Jacks')).toBeInTheDocument()
+  expect(screen.getByText('Dumbbell Floor Press')).toBeInTheDocument()
+  expect(screen.queryByText(/Hold any row/)).not.toBeInTheDocument()
+  expect(screen.queryByRole('button',{name:'+ Add exercise'})).not.toBeInTheDocument()
+})
 
 it('uses set navigation, whole-row dragging and an exercise inspector without move controls', () => {
   vi.useFakeTimers()

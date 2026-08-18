@@ -247,6 +247,12 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .select-row { display:flex; align-items:center; justify-content:space-between; gap:14px; font-weight:700; }
 .select-row select { width:auto; }
 .result-count { margin:0; font-size:.78rem; font-weight:700; }
+.library-selection-summary { display:grid; gap:10px; padding:14px; border:1px solid #b7d0ee; border-radius:16px; background:#f1f7ff; }
+.library-selection-summary header { display:flex; justify-content:space-between; gap:12px; color:var(--ink); font-size:.78rem; }
+.library-selection-summary header span { color:var(--muted); }
+.library-selection-summary > div { display:flex; flex-wrap:wrap; gap:7px; }
+.library-selection-summary button { display:flex; align-items:center; gap:7px; padding:8px 10px; border:1px solid #b7d0ee; border-radius:999px; background:white; color:var(--blue-deep); font-size:.7rem; font-weight:750; }
+.library-selection-summary button span { color:var(--muted); font-size:.9rem; }
 .exercise-list { display:grid; gap:10px; }
 .card-actions { display:grid; gap:8px; }
 .card-actions button { width:34px; height:34px; border:1px solid var(--line); border-radius:10px; background:white; color:#9aa19b; }

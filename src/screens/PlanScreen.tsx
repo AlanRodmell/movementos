@@ -49,8 +49,10 @@ function planGroups(plan: WorkoutPlan): PlanGroup[] {
     }
     group.indexes.push(index)
   })
+  const seen=new Set<string>()
+  const selectedIndexes=plan.exercises.map((item,index)=>{if(seen.has(item.exerciseId))return-1;seen.add(item.exerciseId);return index}).filter(index=>index>=0)
   return plan.id.startsWith('manual_')&&groups.length>1
-    ? [{key:'all',label:'All selected movements',note:'Every movement selected from the exercise library',indexes:plan.exercises.map((_,index)=>index)},...groups]
+    ? [{key:'all',label:'All selected movements',note:'Every movement selected from the exercise library',indexes:selectedIndexes},...groups]
     : groups
 }
 
@@ -64,7 +66,7 @@ function pretty(value: string) {
   return value.replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase())
 }
 
-export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, onViewSaved, onRegenerate, onEasier, onHarder, onAdjust, onSwap, onReorder, onAdd, onRemove, onAvoid }: { plan: WorkoutPlan; customExercises: Exercise[]; isSaved:boolean; onStart: () => void; onSave: () => void; onViewSaved:()=>void; onRegenerate: () => void; onEasier:(index:number)=>void; onHarder:(index:number)=>void; onAdjust:(index:number,direction:-1|1)=>void; onSwap:(index:number)=>void; onReorder:(fromIndex:number,toIndex:number)=>void; onAdd:(groupIndex:number,exerciseId:string)=>void; onRemove:(index:number)=>void; onAvoid:(index:number,id:string)=>void }) {
+export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, onViewSaved, onRegenerate, onSetCount, onEasier, onHarder, onAdjust, onSwap, onReorder, onAdd, onRemove, onAvoid }: { plan: WorkoutPlan; customExercises: Exercise[]; isSaved:boolean; onStart: () => void; onSave: () => void; onViewSaved:()=>void; onRegenerate: () => void; onSetCount?:(sets:number)=>void; onEasier:(index:number)=>void; onHarder:(index:number)=>void; onAdjust:(index:number,direction:-1|1)=>void; onSwap:(index:number)=>void; onReorder:(fromIndex:number,toIndex:number)=>void; onAdd:(groupIndex:number,exerciseId:string)=>void; onRemove:(index:number)=>void; onAvoid:(index:number,id:string)=>void }) {
   const groups = planGroups(plan)
   const firstMainGroup = groups.find(group => group.key.startsWith('main-'))?.key ?? groups[0]?.key ?? ''
   const [activeGroupKey, setActiveGroupKey] = useState(firstMainGroup)
@@ -82,7 +84,8 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
   const selectedExercise = selectedEntry ? resolve(selectedEntry.exerciseId) : null
   const activeExerciseIds = new Set(activeGroup?.indexes.map(index => plan.exercises[index].exerciseId) ?? [])
   const normalizedSearch = exerciseSearch.trim().toLowerCase()
-  const addCandidates = [...exercises, ...customExercises].filter(exercise => !activeExerciseIds.has(exercise.id)
+  const allowedCategories=activeGroup?.key.startsWith('main-')||activeGroup?.key==='Main work'?['upper','lower','core']:activeGroup?.key==='Prepare'?['warmup']:activeGroup?.key==='Condition'?['conditioning']:activeGroup?.key==='Restore'?['mobility','stretching','mindfulness']:[]
+  const addCandidates = [...exercises, ...customExercises].filter(exercise => allowedCategories.includes(exercise.category)&&!activeExerciseIds.has(exercise.id)
     && (!normalizedSearch || `${exercise.name} ${exercise.pattern} ${exercise.primaryMuscles.join(' ')}`.toLowerCase().includes(normalizedSearch)))
     .slice(0, 10)
 
@@ -209,6 +212,11 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
       if (current && Array.from(event.changedTouches).some(touch => touch.identifier === current.pointerId)) finishDrag(current.pointerId)
     }
 
+    const cancelTouchDrag = () => {
+      clearHoldTimer()
+      updateDrag(null)
+    }
+
     const cancelDrag = (event: PointerEvent) => {
       if (event.pointerType !== 'touch' && dragRef.current?.pointerId === event.pointerId) {
         clearHoldTimer()
@@ -221,14 +229,14 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
     window.addEventListener('pointercancel', cancelDrag)
     window.addEventListener('touchmove', moveTouchDrag, { passive:false })
     window.addEventListener('touchend', finishTouchDrag)
-    window.addEventListener('touchcancel', finishTouchDrag)
+    window.addEventListener('touchcancel', cancelTouchDrag)
     return () => {
       window.removeEventListener('pointermove', moveDrag)
       window.removeEventListener('pointerup', finishPointerDrag)
       window.removeEventListener('pointercancel', cancelDrag)
       window.removeEventListener('touchmove', moveTouchDrag)
       window.removeEventListener('touchend', finishTouchDrag)
-      window.removeEventListener('touchcancel', finishTouchDrag)
+      window.removeEventListener('touchcancel', cancelTouchDrag)
     }
   }, [drag?.pointerId, drag?.fromIndex, onReorder, plan])
 
@@ -267,12 +275,16 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
 
   const closeInspector = () => setSelectedIndex(null)
   const isAllOverview=activeGroup?.key==='all'
+  const mainWork=plan.exercises.filter(item=>item.section==='Main work')
+  const numberedSets=[...new Set(mainWork.map(item=>item.setNumber).filter((value):value is number=>value!==undefined))]
+  const setCount=Math.max(1,numberedSets.length)
 
   return <div className="screen plan-screen">
     <section className="plan-hero">
       <div className="plan-title-block"><span className="eyebrow">YOUR SESSION</span><h1>{plan.name}</h1></div>
       <div className="plan-fact"><span>◎</span><div><strong>{pretty(plan.goal)}</strong><small>Focus</small></div></div>
       <div className="plan-fact"><span>◷</span><div><strong>{plan.durationMinutes} min</strong><small>Est. duration</small></div></div>
+      {mainWork.length>0&&<div className="plan-fact plan-set-control"><span>↻</span><div><strong>{setCount} {setCount===1?'set':'sets'}</strong><small>Main circuit</small></div><div className="set-stepper" role="group" aria-label="Main circuit sets"><button type="button" aria-label="Remove one main circuit set" disabled={setCount<=1} onClick={()=>onSetCount?.(setCount-1)}>−</button><span aria-hidden="true">{setCount}</span><button type="button" aria-label="Add one main circuit set" disabled={setCount>=6} onClick={()=>onSetCount?.(setCount+1)}>+</button></div></div>}
     </section>
 
     <nav className="routine-map" aria-label="Routine structure">

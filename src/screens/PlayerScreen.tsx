@@ -210,7 +210,7 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
     {modifyOpen&&<div className="player-modify-backdrop" onPointerDown={()=>setModifyOpen(false)}>
       <section className="player-modify-sheet" role="dialog" aria-modal="true" aria-labelledby="modify-exercise-title" onPointerDown={event=>event.stopPropagation()}>
         <span className="player-sheet-grabber" aria-hidden="true"/>
-        <header><div><span className="eyebrow">MODIFY EXERCISE</span><h2 id="modify-exercise-title">Make it work for today</h2></div><button className="player-modify-close" type="button" aria-label="Close modify exercise" onClick={()=>setModifyOpen(false)}>×</button></header>
+        <header><div><span className="eyebrow">MODIFY EXERCISE</span><h2 id="modify-exercise-title">Make it work for today</h2></div><button autoFocus className="player-modify-close" type="button" aria-label="Close modify exercise" onClick={()=>setModifyOpen(false)}>×</button></header>
         <p>The timer is paused while you make a change.</p>
         <div className="player-modify-grid"><button type="button" onClick={()=>changeDifficulty(-1)}>Make easier</button><button type="button" onClick={()=>changeDifficulty(1)}>Make harder</button></div>
         <div className="player-prescription-adjuster"><button type="button" aria-label="Reduce reps or time" onClick={()=>changePrescription(-1)}>−</button><div><small>CURRENT PRESCRIPTION</small><strong>{displayedPrescription}</strong></div><button type="button" aria-label="Increase reps or time" onClick={()=>changePrescription(1)}>+</button></div>

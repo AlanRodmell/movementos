@@ -1,6 +1,6 @@
 import { catalogueStats, exerciseById, exercises, exerciseVideoUrl } from '../data/exercises'
 import { defaultState } from '../storage/state'
-import { addPlanExercise, adjustPlanPrescription, applySessionCompletion, avoidPlanExercise, createManualWorkout, exerciseMatchesArea, generateFreshWorkout, generateWorkout, getDailyRecommendation, getExerciseDecision, learningContextKey, movementPosition, orderWorkoutExercisesForFlow, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
+import { addPlanExercise, adjustPlanPrescription, applySessionCompletion, avoidPlanExercise, createManualWorkout, exerciseMatchesArea, generateFreshWorkout, generateWorkout, getDailyRecommendation, getExerciseDecision, learningContextKey, movementPosition, orderWorkoutExercisesForFlow, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, setPlanSetCount, swapPlanExercise } from './engine'
 import { emptyLearningEntry } from './learning'
 import type { BuilderPreferences, WorkoutSession } from './types'
 
@@ -330,6 +330,36 @@ describe('workout engine', () => {
     expect(added.exercises.filter(item=>item.section==='Main work'&&item.setNumber===1).at(-1)?.exerciseId).toBe(candidate.id)
     expect(added.exercises.filter(item=>item.section==='Main work'&&item.setNumber===2).at(-1)?.exerciseId).toBe(candidate.id)
     expect(added.durationMinutes).toBeGreaterThan(plan.durationMinutes)
+  })
+
+  it('creates repeated sets from a manual library workout without repeating preparation or recovery',()=>{
+    const plan=createManualWorkout(['w1','x001','u1','m5'],defaultState)
+    const repeated=setPlanSetCount(plan,3)
+    const mainIds=(setNumber:number)=>repeated.exercises.filter(item=>item.section==='Main work'&&item.setNumber===setNumber).map(item=>item.exerciseId)
+
+    expect(mainIds(1)).toEqual(['x001','u1'])
+    expect(mainIds(2)).toEqual(mainIds(1))
+    expect(mainIds(3)).toEqual(mainIds(1))
+    expect(repeated.exercises.filter(item=>item.section==='Prepare')).toHaveLength(1)
+    expect(repeated.exercises.filter(item=>item.section==='Restore')).toHaveLength(1)
+    expect(repeated.exercises.filter(item=>item.section==='Main work').every(item=>item.totalSets===3)).toBe(true)
+    expect(repeated.durationMinutes).toBeGreaterThan(plan.durationMinutes)
+  })
+
+  it('resizes an edited circuit from its first set and clamps the supported set range',()=>{
+    const generated=generateWorkout({...preferences,exercisesPerRound:3,targetSets:2},defaultState,'resize-sets')
+    const firstMain=generated.exercises.findIndex(item=>item.section==='Main work'&&item.setNumber===1)
+    const edited=adjustPlanPrescription(generated,firstMain,1)
+    const expanded=setPlanSetCount(edited,99)
+    const firstSet=expanded.exercises.filter(item=>item.section==='Main work'&&item.setNumber===1)
+
+    expect(new Set(expanded.exercises.filter(item=>item.section==='Main work').map(item=>item.setNumber))).toEqual(new Set([1,2,3,4,5,6]))
+    expect(expanded.exercises.filter(item=>item.section==='Main work'&&item.exerciseId===firstSet[0].exerciseId).every(item=>item.prescription===firstSet[0].prescription)).toBe(true)
+    expect(expanded.balanceReport?.sectionCounts['Main work']).toBe(firstSet.length*6)
+
+    const collapsed=setPlanSetCount(expanded,0)
+    expect(new Set(collapsed.exercises.filter(item=>item.section==='Main work').map(item=>item.setNumber))).toEqual(new Set([1]))
+    expect(collapsed.exercises.filter(item=>item.section==='Main work').every(item=>item.totalSets===1)).toBe(true)
   })
 
   it('reorders movements within a section and protects section boundaries',()=>{

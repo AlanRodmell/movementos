@@ -775,13 +775,51 @@ export function adjustPlanPrescription(plan: WorkoutPlan, index: number, directi
   const occurrences = matchingOccurrences(plan, index)
   const exercises = plan.exercises.map((entry, itemIndex) => {
     if (!occurrences.has(itemIndex)) return entry
-    const timed = /sec|min/i.test(entry.prescription)
+    const dosePattern=/(\d+(?:\.\d+)?)(\s*[-–]\s*(\d+(?:\.\d+)?))?(\s*(?:reps?|seconds?|secs?|minutes?|mins?|each(?:\s+side)?|per\s+(?:side|leg|arm)))/gi
+    const matches=[...entry.prescription.matchAll(dosePattern)]
+    const dose=matches.at(-1)
+    if(!dose||dose.index===undefined)return entry
+    const unit=dose[4].toLowerCase()
+    const secondsUnit=/sec/.test(unit)
+    const minutesUnit=/min/.test(unit)
+    const timed=secondsUnit||minutesUnit
     const bilateral = /side|each|leg|arm/i.test(entry.prescription)
-    const step = timed ? 5 : 1
-    const prescription = entry.prescription.replace(/\d+/g, value => String(Math.max(1, Number(value) + direction * step)))
-    return { ...entry, prescription, durationSeconds: timed ? Math.max(5, entry.durationSeconds + direction * step * (bilateral ? 2 : 1)) : entry.durationSeconds }
+    const step=secondsUnit?5:1
+    const lowerBound=secondsUnit?5:minutesUnit ? .5 : 1
+    const format=(value:number)=>Number.isInteger(value)?String(value):String(Math.round(value*10)/10)
+    const adjust=(value:string)=>format(Math.max(lowerBound,Number(value)+direction*step))
+    const replacement=`${adjust(dose[1])}${dose[2]?dose[2].replace(dose[3],adjust(dose[3])):''}${dose[4]}`
+    const prescription=`${entry.prescription.slice(0,dose.index)}${replacement}${entry.prescription.slice(dose.index+dose[0].length)}`
+    const durationStep=secondsUnit?5:minutesUnit?60:0
+    return { ...entry, prescription, durationSeconds: timed ? Math.max(5, entry.durationSeconds + direction * durationStep * (bilateral ? 2 : 1)) : entry.durationSeconds }
   })
   return { ...plan, exercises, durationMinutes: estimatedPlanMinutes(exercises) }
+}
+
+export function setPlanSetCount(plan: WorkoutPlan, requestedSets: number) {
+  const mainWork = plan.exercises.filter(item => item.section === 'Main work')
+  if (!mainWork.length) return plan
+
+  const totalSets = Math.max(1, Math.min(6, Math.round(requestedSets) || 1))
+  const numberedSets = [...new Set(mainWork.map(item => item.setNumber).filter((value): value is number => value !== undefined))].sort((a,b) => a-b)
+  const sourceSet = numberedSets.length
+    ? mainWork.filter(item => item.setNumber === numberedSets[0])
+    : mainWork
+  const repeated = Array.from({ length:totalSets }, (_,setIndex) => sourceSet.map(item => ({
+    ...item,
+    setNumber:setIndex + 1,
+    totalSets,
+  }))).flat()
+  const firstMainIndex = plan.exercises.findIndex(item => item.section === 'Main work')
+  const before = plan.exercises.slice(0,firstMainIndex).filter(item => item.section !== 'Main work')
+  const after = plan.exercises.slice(firstMainIndex).filter(item => item.section !== 'Main work')
+  const exercises = [...before,...repeated,...after]
+  const balanceReport = plan.balanceReport ? {
+    ...plan.balanceReport,
+    sectionCounts:{ ...plan.balanceReport.sectionCounts, 'Main work':repeated.length },
+    generatedAt:new Date().toISOString(),
+  } : undefined
+  return { ...plan, exercises, durationMinutes:estimatedPlanMinutes(exercises), balanceReport }
 }
 
 export function removePlanExercise(plan: WorkoutPlan, index: number) {
@@ -943,6 +981,7 @@ export function generateCategoryWorkout(area: MuscleArea, state: AppState, durat
 
 export function createManualWorkout(ids: string[], state: AppState): WorkoutPlan {
   const selected = ids.map(id => resolveExercise(id, state)).filter((item): item is Exercise => Boolean(item))
+    .filter(exercise=>!state.profile.avoidList.includes(exercise.id)&&!isFlareExcluded(exercise,state)&&(exercise.optIn!=='advancedBridges'||state.profile.advancedBridges))
   const preferences: BuilderPreferences = {
     intention: 'train', goal: state.profile.goal, durationMinutes: 'auto', focusAreas: [], equipment: state.profile.equipment,
     level: state.profile.level, includeConditioning: true, includeWarmup: true, exercisesPerRound: 'auto', targetSets: 1,

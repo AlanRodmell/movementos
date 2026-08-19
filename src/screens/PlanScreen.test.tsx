@@ -1,6 +1,6 @@
 import { act, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
 import { exerciseById } from '../data/exercises'
-import { createManualWorkout, generateWorkout } from '../domain/engine'
+import { createManualWorkout, generateWorkout, setPlanSetCount } from '../domain/engine'
 import { defaultState } from '../storage/state'
 import { PlanScreen } from './PlanScreen'
 
@@ -16,6 +16,27 @@ it('shows every library selection together before splitting them into workout se
   expect(screen.getByText('Dumbbell Floor Press')).toBeInTheDocument()
   expect(screen.queryByText(/Hold any row/)).not.toBeInTheDocument()
   expect(screen.queryByRole('button',{name:'+ Add exercise'})).not.toBeInTheDocument()
+})
+
+it('lets a library-built workout create and remove coherent main-circuit sets',()=>{
+  const plan=createManualWorkout(['w1','x001','u1','m5'],defaultState)
+  const onSetCount=vi.fn()
+  const noop=vi.fn()
+  const props={customExercises:[],isSaved:false,onStart:noop,onSave:noop,onViewSaved:noop,onRegenerate:noop,onSetCount,onEasier:noop,onHarder:noop,onAdjust:noop,onSwap:noop,onReorder:noop,onAdd:noop,onRemove:noop,onAvoid:noop}
+  const {rerender}=render(<PlanScreen {...props} plan={plan}/>)
+
+  expect(screen.getByRole('group',{name:'Main circuit sets'})).toHaveTextContent('1')
+  expect(screen.getByRole('button',{name:'Remove one main circuit set'})).toBeDisabled()
+  fireEvent.click(screen.getByRole('button',{name:'Add one main circuit set'}))
+  expect(onSetCount).toHaveBeenCalledWith(2)
+
+  const twoSets=setPlanSetCount(plan,2)
+  rerender(<PlanScreen {...props} plan={twoSets}/>)
+  expect(screen.getByRole('group',{name:'Main circuit sets'})).toHaveTextContent('2')
+  expect(screen.getByRole('button',{name:'Set 1, 2 exercises'})).toBeInTheDocument()
+  expect(screen.getByRole('button',{name:'Set 2, 2 exercises'})).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button',{name:'Remove one main circuit set'}))
+  expect(onSetCount).toHaveBeenLastCalledWith(1)
 })
 
 it('uses set navigation, whole-row dragging and an exercise inspector without move controls', () => {
@@ -143,4 +164,61 @@ it('turns the save action into a saved-workout link after saving',()=>{
   expect(screen.getByRole('status')).toHaveTextContent('Workout saved')
   fireEvent.click(screen.getByRole('button',{name:'View saved'}))
   expect(onViewSaved).toHaveBeenCalledOnce()
+})
+
+it('wires every inspector action and closes the inspector after avoiding or removing',()=>{
+  const plan=createManualWorkout(['x001'],defaultState)
+  const actions={onEasier:vi.fn(),onHarder:vi.fn(),onAdjust:vi.fn(),onSwap:vi.fn(),onRemove:vi.fn(),onAvoid:vi.fn()}
+  const noop=vi.fn()
+  render(<PlanScreen plan={plan} customExercises={[]} isSaved={false} onStart={noop} onSave={noop} onViewSaved={noop} onRegenerate={noop} onSetCount={noop} onReorder={noop} onAdd={noop} {...actions}/>)
+  const row=screen.getByRole('listitem')
+  fireEvent.keyDown(row,{key:'Enter'})
+  fireEvent.click(screen.getByRole('button',{name:/Easier/}))
+  fireEvent.click(screen.getByRole('button',{name:/Harder/}))
+  fireEvent.click(screen.getByRole('button',{name:/Swap/}))
+  fireEvent.click(screen.getByRole('button',{name:/Decrease reps or time/}))
+  fireEvent.click(screen.getByRole('button',{name:/Increase reps or time/}))
+  expect(actions.onEasier).toHaveBeenCalledWith(0)
+  expect(actions.onHarder).toHaveBeenCalledWith(0)
+  expect(actions.onSwap).toHaveBeenCalledWith(0)
+  expect(actions.onAdjust).toHaveBeenNthCalledWith(1,0,-1)
+  expect(actions.onAdjust).toHaveBeenNthCalledWith(2,0,1)
+  fireEvent.click(screen.getByRole('button',{name:/Avoid/}))
+  expect(actions.onAvoid).toHaveBeenCalledWith(0,'x001')
+  expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+  fireEvent.keyDown(row,{key:'Enter'})
+  fireEvent.click(screen.getByRole('button',{name:'Remove'}))
+  expect(actions.onRemove).toHaveBeenCalledWith(0)
+  expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+})
+
+it('only offers exercises appropriate to the active section and focuses search',()=>{
+  const plan=createManualWorkout(['x001','m5'],defaultState)
+  const noop=vi.fn()
+  render(<PlanScreen plan={plan} customExercises={[]} isSaved={false} onStart={noop} onSave={noop} onViewSaved={noop} onRegenerate={noop} onSetCount={noop} onEasier={noop} onHarder={noop} onAdjust={noop} onSwap={noop} onReorder={noop} onAdd={noop} onRemove={noop} onAvoid={noop}/>)
+  fireEvent.click(screen.getByRole('button',{name:'Restore, 1 exercises'}))
+  fireEvent.click(screen.getByRole('button',{name:'+ Add exercise'}))
+  const search=screen.getByRole('searchbox',{name:'Search exercises to add'})
+  expect(search).toHaveFocus()
+  fireEvent.change(search,{target:{value:'Dumbbell Floor Press'}})
+  expect(screen.getByText('No matching exercises available for this section.')).toBeInTheDocument()
+  fireEvent.change(search,{target:{value:'Neck Side Stretch'}})
+  expect(screen.getByRole('button',{name:/Neck Side Stretch/})).toBeInTheDocument()
+})
+
+it('cancels a touch drag without reordering and keeps the combined manual overview unique',()=>{
+  vi.useFakeTimers()
+  const plan=setPlanSetCount(createManualWorkout(['w1','x001','u1','m5'],defaultState),2)
+  const onReorder=vi.fn();const noop=vi.fn()
+  render(<PlanScreen plan={plan} customExercises={[]} isSaved={false} onStart={noop} onSave={noop} onViewSaved={noop} onRegenerate={noop} onSetCount={noop} onEasier={noop} onHarder={noop} onAdjust={noop} onSwap={noop} onReorder={onReorder} onAdd={noop} onRemove={noop} onAvoid={noop}/>)
+  expect(screen.getByRole('button',{name:'All selected movements, 4 exercises'})).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button',{name:'Set 1, 2 exercises'}))
+  const row=screen.getAllByRole('listitem')[0]
+  fireEvent.touchStart(row,{changedTouches:[{identifier:4,clientX:10,clientY:10}]})
+  act(()=>vi.advanceTimersByTime(1000))
+  fireEvent.touchMove(window,{touches:[{identifier:4,clientX:10,clientY:30}]})
+  fireEvent.touchCancel(window,{changedTouches:[{identifier:4,clientX:10,clientY:30}]})
+  expect(onReorder).not.toHaveBeenCalled()
+  expect(row).toHaveAttribute('aria-grabbed','false')
+  vi.useRealTimers()
 })

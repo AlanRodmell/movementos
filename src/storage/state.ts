@@ -210,7 +210,10 @@ export function loadState(): AppState {
   try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? normaliseState(JSON.parse(raw)) : structuredClone(defaultState) } catch { return structuredClone(defaultState) }
 }
 
-export function saveState(state: AppState) { localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeLegacyState(state))) }
+export function saveState(state: AppState) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeLegacyState(state))); return true }
+  catch { return false }
+}
 
 function download(contents: string, filename: string, type: string) {
   const url = URL.createObjectURL(new Blob([contents], { type }))

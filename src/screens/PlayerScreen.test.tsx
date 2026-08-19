@@ -247,6 +247,7 @@ it('pauses the workout and progressively discloses modification controls',()=>{
   expect(screen.queryByRole('button',{name:'Make easier'})).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button',{name:'Modify exercise'}))
   expect(screen.getByRole('dialog',{name:'Make it work for today'})).toBeInTheDocument()
+  expect(screen.getByRole('button',{name:'Close modify exercise'})).toHaveFocus()
   expect(screen.getByRole('button',{name:'Resume'})).toBeInTheDocument()
   expect(screen.getByRole('button',{name:'Make easier'})).toBeInTheDocument()
   expect(screen.getByRole('button',{name:'Make harder'})).toBeInTheDocument()
@@ -321,4 +322,122 @@ it('offers an explicit issue after discomfort without diagnosing an injury',()=>
   fireEvent.click(screen.getByRole('button',{name:'Add issue'}))
   expect(onCreateIssue).toHaveBeenCalledWith(expect.any(String),'moderate','left',expect.stringContaining('Dumbbell Floor Press'))
   expect(screen.getByRole('button',{name:'Issue added'})).toBeDisabled()
+})
+
+it.each([
+  ['waiting',0,false,'Nice work'],
+  ['rest',8,false,'Recover'],
+  ['work',12,false,'Dumbbell Floor Press'],
+  ['switch_sides',6,false,'Dumbbell Floor Press · Side 2'],
+] as const)('restores the persisted %s phase without resetting its remaining time',(phase,remaining,running,heading)=>{
+  const plan:WorkoutPlan={id:`resume-${phase}`,name:'Resume',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:[],insights:[],exercises:[{exerciseId:'x001',prescription:phase==='switch_sides'?'10 each side':'10 reps',durationSeconds:12,rationale:'Test',section:'Main work'},{exerciseId:'x002',prescription:'8 reps',durationSeconds:10,rationale:'Next',section:'Main work'}]}
+  const session:ActiveSession={plan,index:0,phase,remainingSeconds:remaining,running,deadlineAt:null,startedAt:Date.now(),completedExerciseIds:phase==='waiting'||phase==='rest'?['x001']:[]}
+  render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+  expect(screen.getByRole('heading',{name:heading})).toBeInTheDocument()
+  if(remaining)expect(screen.getByText(`0:${String(remaining).padStart(2,'0')}`)).toBeInTheDocument()
+})
+
+it('catches up an expired backgrounded rest deadline and starts the next movement',()=>{
+  vi.useFakeTimers();vi.setSystemTime(new Date('2026-08-19T12:00:00Z'))
+  const plan:WorkoutPlan={id:'expired',name:'Expired',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:[],insights:[],exercises:[{exerciseId:'x001',prescription:'8 reps',durationSeconds:10,rationale:'First',section:'Main work'},{exerciseId:'x002',prescription:'8 reps',durationSeconds:10,rationale:'Next',section:'Main work'}]}
+  const session:ActiveSession={plan,index:0,phase:'rest',remainingSeconds:8,running:true,deadlineAt:Date.now()-5000,startedAt:Date.now()-20_000,completedExerciseIds:['x001']}
+  render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+  act(()=>vi.advanceTimersByTime(0))
+  expect(screen.getByRole('heading',{name:'Dumbbell Bench Press'})).toBeInTheDocument()
+  expect(screen.getByText('0:10')).toBeInTheDocument()
+  vi.useRealTimers()
+})
+
+it('keeps a paused timer stable until the user resumes it',()=>{
+  vi.useFakeTimers();vi.setSystemTime(new Date('2026-08-19T12:00:00Z'))
+  const plan=createManualWorkout(['x001'],defaultState)
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:12,running:false,deadlineAt:null,startedAt:Date.now(),completedExerciseIds:[]}
+  render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+  act(()=>vi.advanceTimersByTime(20_000))
+  expect(screen.getByText('0:12')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button',{name:'Resume'}))
+  act(()=>vi.advanceTimersByTime(5000))
+  expect(screen.getByText('0:07')).toBeInTheDocument()
+  vi.useRealTimers()
+})
+
+it('finishes correctly after the second side of a final bilateral movement',()=>{
+  vi.useFakeTimers();vi.setSystemTime(new Date('2026-08-19T12:00:00Z'))
+  const plan:WorkoutPlan={id:'final-side',name:'Final side',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:[],insights:[],exercises:[{exerciseId:'x005',prescription:'8 each side',durationSeconds:4,rationale:'Test',section:'Main work'}]}
+  const session:ActiveSession={plan,index:0,phase:'switch_sides',remainingSeconds:2,running:true,deadlineAt:Date.now()+2000,startedAt:Date.now(),completedExerciseIds:[]}
+  render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+  act(()=>vi.advanceTimersByTime(2000))
+  expect(screen.getByRole('heading',{name:'How did each movement fit?'})).toBeInTheDocument()
+  expect(screen.getByText(/1\/1 completed/)).toBeInTheDocument()
+  vi.useRealTimers()
+})
+
+it('continues directly to rest when waiting is disabled and survives audio failures',()=>{
+  vi.useFakeTimers();vi.setSystemTime(new Date('2026-08-19T12:00:00Z'))
+  const originalAudioContext=window.AudioContext
+  Object.defineProperty(window,'AudioContext',{configurable:true,value:class{constructor(){throw new Error('blocked')}}})
+  const plan:WorkoutPlan={id:'no-wait',name:'No wait',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:[],insights:[],exercises:[{exerciseId:'x001',prescription:'8 reps',durationSeconds:1,rationale:'First',section:'Main work'},{exerciseId:'x002',prescription:'8 reps',durationSeconds:1,rationale:'Second',section:'Main work'}]}
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:1,running:true,deadlineAt:Date.now()+1000,startedAt:Date.now(),completedExerciseIds:[]}
+  render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+  act(()=>vi.advanceTimersByTime(1000))
+  expect(screen.getByRole('heading',{name:'Recover'})).toBeInTheDocument()
+  expect(screen.queryByRole('heading',{name:'Nice work'})).not.toBeInTheDocument()
+  Object.defineProperty(window,'AudioContext',{configurable:true,value:originalAudioContext})
+  vi.useRealTimers()
+})
+
+it('submits grouped completions, skips, performance and an unrated session payload',()=>{
+  const startedAt=Date.now()-5000
+  const plan:WorkoutPlan={id:'payload',name:'Payload',intention:'train',goal:'strength',durationMinutes:3,targetDurationMinutes:3,createdAt:new Date().toISOString(),focusAreas:['upper_body'],insights:[],exercises:[
+    {exerciseId:'x001',prescription:'8 reps',durationSeconds:30,rationale:'Set 1',section:'Main work',setNumber:1,totalSets:2},
+    {exerciseId:'x001',prescription:'8 reps',durationSeconds:30,rationale:'Set 2',section:'Main work',setNumber:2,totalSets:2},
+    {exerciseId:'x002',prescription:'8 reps',durationSeconds:30,rationale:'Finish',section:'Main work',setNumber:2,totalSets:2},
+  ]}
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:30,running:false,deadlineAt:null,startedAt,completedExerciseIds:[],actions:[]}
+  const onComplete=vi.fn()
+  render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{upper:12}} onProgress={vi.fn()} onComplete={onComplete} onExit={vi.fn()}/>)
+  fireEvent.click(screen.getByRole('button',{name:/Log & continue/}))
+  fireEvent.click(screen.getByRole('button',{name:/Skip rest/}))
+  fireEvent.click(screen.getByRole('button',{name:'Skip'}))
+  fireEvent.click(screen.getByRole('button',{name:/Skip rest/}))
+  fireEvent.click(screen.getByRole('button',{name:/Complete session/}))
+  const rows=screen.getAllByText(/completed/)
+  expect(rows.some(row=>row.textContent?.includes('1/2 completed')&&row.textContent.includes('1 skipped'))).toBe(true)
+  fireEvent.click(screen.getAllByText('Record achieved reps, time or load')[0])
+  fireEvent.change(screen.getByRole('textbox',{name:/Dumbbell Floor Press achieved reps/}),{target:{value:'9'}})
+  fireEvent.change(screen.getByRole('textbox',{name:/Dumbbell Floor Press load$/}),{target:{value:'12.5'}})
+  fireEvent.change(screen.getByRole('combobox',{name:/Dumbbell Floor Press load unit/}),{target:{value:'lbs'}})
+  fireEvent.click(screen.getByRole('button',{name:/Continue to overall rating/}))
+  fireEvent.click(screen.getByRole('button',{name:'Finish without overall rating'}))
+  expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({rating:'unrated',completedExerciseIds:['x001','x002'],areaLoadBefore:{upper:12},exercises:expect.arrayContaining([expect.objectContaining({id:'x001',plannedAppearances:2,completedAppearances:1,skippedAppearances:1,performance:{achievedReps:9,load:12.5,loadUnit:'lbs'}})]),actions:expect.arrayContaining([expect.objectContaining({type:'skipped'})]),planStructure:expect.objectContaining({mainExerciseCount:2,totalSets:2})}))
+})
+
+it('includes prescription and swap modifications in the submitted session record',()=>{
+  const state={...defaultState,profile:{...defaultState.profile,equipment:['none' as const,'dumbbells' as const,'bench' as const]}}
+  const plan=createManualWorkout(['x001'],state)
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:30,running:false,deadlineAt:null,startedAt:Date.now()-1000,completedExerciseIds:[],actions:[]}
+  const onComplete=vi.fn()
+  render(<PlayerScreen session={session} state={state} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={onComplete} onExit={vi.fn()}/>)
+  fireEvent.click(screen.getByRole('button',{name:'Modify exercise'}))
+  fireEvent.click(screen.getByRole('button',{name:'Increase reps or time'}))
+  fireEvent.click(screen.getByRole('button',{name:'Swap exercise'}))
+  expect(screen.getByRole('status')).toHaveTextContent('Exercise swapped')
+  fireEvent.click(screen.getByRole('button',{name:'Done'}))
+  fireEvent.click(screen.getByRole('button',{name:/Complete session/}))
+  expect(screen.getAllByText(/swapped/)).toHaveLength(2)
+  fireEvent.click(screen.getByRole('button',{name:/Continue to overall rating/}))
+  fireEvent.click(screen.getByRole('button',{name:'Finish without overall rating'}))
+  const payload=onComplete.mock.calls[0][0]
+  expect(payload.actions.map((item:{type:string})=>item.type)).toEqual(expect.arrayContaining(['prescription_up','swapped_out','swapped_in','completed']))
+  expect(payload.exercises.filter((item:{swapped?:boolean})=>item.swapped).length).toBeGreaterThanOrEqual(2)
+})
+
+it('resolves custom exercise coaching and video content during playback',()=>{
+  const custom={id:'u_custom_player',name:'Custom Player Move',description:'Move with control.',category:'upper' as const,pattern:'custom_press',level:2 as const,durationSeconds:20,prescription:'6 reps',equipment:['none' as const],primaryMuscles:['chest' as const],secondaryMuscles:[],unilateral:false,lowImpact:true,goals:['general' as const],contraindications:[],videoUrl:'https://example.com/custom-video',isCustom:true}
+  const plan:WorkoutPlan={id:'custom-player',name:'Custom',intention:'train',goal:'general',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['chest'],insights:[],exercises:[{exerciseId:custom.id,prescription:'6 reps',durationSeconds:20,rationale:'Custom',section:'Main work'}]}
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:20,running:false,deadlineAt:null,startedAt:Date.now(),completedExerciseIds:[]}
+  render(<PlayerScreen session={session} state={{...defaultState,customExercises:[custom]}} customExercises={[custom]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+  expect(screen.getByRole('heading',{name:custom.name})).toBeInTheDocument()
+  expect(screen.getByText(custom.description)).toBeInTheDocument()
+  expect(screen.getByRole('link',{name:'▶ Watch demo'})).toHaveAttribute('href',custom.videoUrl)
 })

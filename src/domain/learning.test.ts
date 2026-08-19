@@ -97,4 +97,39 @@ describe('local learning model',()=>{
     expect(routine.preferredSets).toBe(3)
     expect(routine.averageCompletionRate).toBe(1)
   })
+
+  it('prefers a compatible variation over load and volume recommendations',()=>{
+    const entry={...emptyLearningEntry(),successfulPerformances:4,positiveFeedback:4,evidence:12,lastPerformance:{load:20,loadUnit:'kg' as const},progressionStatus:'ready' as const}
+    const state={...defaultState,profile:{...defaultState.profile,equipment:['none' as const,'dumbbells' as const,'bench' as const]},learningModel:{...defaultState.learningModel,exercises:{x001:entry}}}
+    expect(getProgressionRecommendations(state)[0]).toMatchObject({category:'variation',fromExerciseId:'x001',toExerciseId:'x002'})
+  })
+
+  it('retains keep and defer decisions until new evidence or the defer window expires',()=>{
+    vi.useFakeTimers();vi.setSystemTime(new Date('2026-08-19T12:00:00Z'))
+    const entry={...emptyLearningEntry(),successfulPerformances:3,evidence:10,progressionStatus:'ready' as const}
+    const state={...defaultState,profile:{...defaultState.profile,equipment:['none' as const,'dumbbells' as const,'bench' as const]},learningModel:{...defaultState.learningModel,exercises:{x001:entry}}}
+    const recommendation=getProgressionRecommendations(state)[0]
+    const kept=respondToProgression(state,recommendation,'keep')
+    expect(getProgressionRecommendations(kept)[0].status).toBe('kept')
+    const deferred=respondToProgression(state,recommendation,'defer')
+    expect(getProgressionRecommendations(deferred)[0].status).toBe('deferred')
+    vi.setSystemTime(new Date('2026-09-03T12:00:00Z'))
+    expect(getProgressionRecommendations(deferred)[0].status).toBe('ready')
+    vi.useRealTimers()
+  })
+
+  it('sanitises corrupt learning imports and enforces every storage cap',()=>{
+    const contexts=Object.fromEntries(Array.from({length:20},(_,index)=>[`context-${index}`,{preference:index,difficultySuitability:-index,reliability:4,evidence:index,lastUpdatedAt:'invalid',skips:-1,swapsOut:-1}]))
+    const routineContexts=Object.fromEntries(Array.from({length:70},(_,index)=>[`routine-${index}`,{confidence:9,positive:-1,negative:-1,evidence:index,lastUpdatedAt:'invalid'}]))
+    const raw={version:1,exercises:{'bad id':{},x001:{preference:9,difficultySuitability:-9,completionReliability:9,progressionStatus:'invented',currentExerciseId:'bad id!',currentPrescription:'x'.repeat(200),contexts,performanceHistory:[{at:'bad',load:-2}]}},routineContexts,events:Array.from({length:400},(_,index)=>({id:String(index)})),recommendations:Array.from({length:120},(_,index)=>({id:String(index)}))}
+    const model=normaliseLearningModel(raw)
+    expect(Object.keys(model.exercises)).toEqual(['x001'])
+    expect(model.exercises.x001).toMatchObject({preference:1,difficultySuitability:-1,completionReliability:1,progressionStatus:'none',currentExerciseId:undefined})
+    expect(model.exercises.x001.currentPrescription).toHaveLength(80)
+    expect(Object.keys(model.exercises.x001.contexts)).toHaveLength(12)
+    expect(model.exercises.x001.performanceHistory).toEqual([])
+    expect(Object.keys(model.routineContexts)).toHaveLength(50)
+    expect(model.events).toHaveLength(300)
+    expect(model.recommendations).toHaveLength(100)
+  })
 })

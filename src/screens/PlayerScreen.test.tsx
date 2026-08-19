@@ -423,6 +423,8 @@ it('includes prescription and swap modifications in the submitted session record
   fireEvent.click(screen.getByRole('button',{name:'Swap exercise'}))
   expect(screen.getByRole('status')).toHaveTextContent('Exercise swapped')
   fireEvent.click(screen.getByRole('button',{name:'Done'}))
+  const firstSide=screen.queryByRole('button',{name:/Log side & continue/})
+  if(firstSide)fireEvent.click(firstSide)
   fireEvent.click(screen.getByRole('button',{name:/Complete session/}))
   expect(screen.getAllByText(/swapped/)).toHaveLength(2)
   fireEvent.click(screen.getByRole('button',{name:/Continue to overall rating/}))

@@ -284,8 +284,15 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
       <div className="plan-title-block"><span className="eyebrow">YOUR SESSION</span><h1>{plan.name}</h1></div>
       <div className="plan-fact"><span>◎</span><div><strong>{pretty(plan.goal)}</strong><small>Focus</small></div></div>
       <div className="plan-fact"><span>◷</span><div><strong>{plan.durationMinutes} min</strong><small>Est. duration</small></div></div>
-      {mainWork.length>0&&<div className="plan-fact plan-set-control"><span>↻</span><div><strong>{setCount} {setCount===1?'set':'sets'}</strong><small>Main circuit</small></div><div className="set-stepper" role="group" aria-label="Main circuit sets"><button type="button" aria-label="Remove one main circuit set" disabled={setCount<=1} onClick={()=>onSetCount?.(setCount-1)}>−</button><span aria-hidden="true">{setCount}</span><button type="button" aria-label="Add one main circuit set" disabled={setCount>=6} onClick={()=>onSetCount?.(setCount+1)}>+</button></div></div>}
+      {mainWork.length>0&&<div className="plan-fact plan-set-summary"><span>↻</span><div><strong>{setCount} {setCount===1?'set':'sets'}</strong><small>Main circuit sets</small></div></div>}
     </section>
+
+    {mainWork.length>0&&<section className="plan-set-builder" aria-labelledby="workout-sets-title">
+      <div><span className="eyebrow">WORKOUT SETS</span><h2 id="workout-sets-title">How many sets?</h2><p>Choose how many times to complete the main circuit. Preparation, conditioning and recovery stay single-pass.</p></div>
+      <div className="set-choice-grid" role="group" aria-label="Number of main circuit sets">
+        {[1,2,3,4,5,6].map(sets=><button key={sets} type="button" className={sets===setCount?'selected':''} aria-pressed={sets===setCount} aria-label={`${sets} ${sets===1?'set':'sets'}`} onClick={()=>onSetCount?.(sets)}><strong>{sets}</strong><small>{sets===1?'SET':'SETS'}</small></button>)}
+      </div>
+    </section>}
 
     <nav className="routine-map" aria-label="Routine structure">
       {groups.map((group, index) => <button key={group.key} className={group.key === activeGroup?.key ? 'active' : ''} aria-label={`${shortGroupLabel(group)}, ${group.indexes.length} exercises`} aria-pressed={group.key === activeGroup?.key} onClick={() => activateGroup(group.key)}>

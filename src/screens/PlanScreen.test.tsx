@@ -25,17 +25,18 @@ it('lets a library-built workout create and remove coherent main-circuit sets',(
   const props={customExercises:[],isSaved:false,onStart:noop,onSave:noop,onViewSaved:noop,onRegenerate:noop,onSetCount,onEasier:noop,onHarder:noop,onAdjust:noop,onSwap:noop,onReorder:noop,onAdd:noop,onRemove:noop,onAvoid:noop}
   const {rerender}=render(<PlanScreen {...props} plan={plan}/>)
 
-  expect(screen.getByRole('group',{name:'Main circuit sets'})).toHaveTextContent('1')
-  expect(screen.getByRole('button',{name:'Remove one main circuit set'})).toBeDisabled()
-  fireEvent.click(screen.getByRole('button',{name:'Add one main circuit set'}))
+  expect(screen.getByRole('heading',{name:'How many sets?'})).toBeInTheDocument()
+  expect(screen.getByText(/Preparation, conditioning and recovery stay single-pass/)).toBeInTheDocument()
+  expect(screen.getByRole('button',{name:'1 set'})).toHaveAttribute('aria-pressed','true')
+  fireEvent.click(screen.getByRole('button',{name:'2 sets'}))
   expect(onSetCount).toHaveBeenCalledWith(2)
 
   const twoSets=setPlanSetCount(plan,2)
   rerender(<PlanScreen {...props} plan={twoSets}/>)
-  expect(screen.getByRole('group',{name:'Main circuit sets'})).toHaveTextContent('2')
+  expect(screen.getByRole('button',{name:'2 sets'})).toHaveAttribute('aria-pressed','true')
   expect(screen.getByRole('button',{name:'Set 1, 2 exercises'})).toBeInTheDocument()
   expect(screen.getByRole('button',{name:'Set 2, 2 exercises'})).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button',{name:'Remove one main circuit set'}))
+  fireEvent.click(screen.getByRole('button',{name:'1 set'}))
   expect(onSetCount).toHaveBeenLastCalledWith(1)
 })
 

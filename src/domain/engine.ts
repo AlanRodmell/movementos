@@ -316,10 +316,10 @@ function plannedPrescription(exercise: Exercise, intention: Intention, goal: Goa
   const goalAdjusted=performanceMultiplier===1?baseGoalAdjusted:{prescription:scaleNumbers(baseGoalAdjusted.prescription,performanceMultiplier),durationSeconds:Math.max(10,Math.round(baseGoalAdjusted.durationSeconds*performanceMultiplier/5)*5)}
   const affected = [...checkInAreas(state), ...activeIssueAreas(state)].some(area => exerciseMatchesArea(exercise, area) || exercise.contraindications.includes(area))
   if (!affected) return { ...goalAdjusted, adjusted: false }
-  const cautiousRecovery = intention === 'recover' && exercise.lowImpact
-  const multiplier = cautiousRecovery ? 1.5 : 0.5
+  const stretchRecovery = exercise.category === 'stretching'
+  const multiplier = stretchRecovery ? 1.5 : 0.5
   return {
-    prescription: `${scaleNumbers(goalAdjusted.prescription, multiplier)}${cautiousRecovery ? ' 🎯' : ' 🩹'}`,
+    prescription: `${scaleNumbers(goalAdjusted.prescription, multiplier)}${stretchRecovery ? ' 🎯' : ' 🩹'}`,
     durationSeconds: Math.max(10, Math.round(goalAdjusted.durationSeconds * multiplier / 5) * 5),
     adjusted: true,
   }
@@ -776,9 +776,10 @@ export function adjustPlanPrescription(plan: WorkoutPlan, index: number, directi
   const exercises = plan.exercises.map((entry, itemIndex) => {
     if (!occurrences.has(itemIndex)) return entry
     const timed = /sec|min/i.test(entry.prescription)
+    const bilateral = /side|each|leg|arm/i.test(entry.prescription)
     const step = timed ? 5 : 1
     const prescription = entry.prescription.replace(/\d+/g, value => String(Math.max(1, Number(value) + direction * step)))
-    return { ...entry, prescription, durationSeconds: timed ? Math.max(5, entry.durationSeconds + direction * 5) : entry.durationSeconds }
+    return { ...entry, prescription, durationSeconds: timed ? Math.max(5, entry.durationSeconds + direction * step * (bilateral ? 2 : 1)) : entry.durationSeconds }
   })
   return { ...plan, exercises, durationMinutes: estimatedPlanMinutes(exercises) }
 }

@@ -1,6 +1,6 @@
 import { catalogueStats, exerciseById, exercises, exerciseVideoUrl } from '../data/exercises'
 import { defaultState } from '../storage/state'
-import { addPlanExercise, applySessionCompletion, avoidPlanExercise, createManualWorkout, exerciseMatchesArea, generateFreshWorkout, generateWorkout, getDailyRecommendation, getExerciseDecision, learningContextKey, movementPosition, orderWorkoutExercisesForFlow, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
+import { addPlanExercise, adjustPlanPrescription, applySessionCompletion, avoidPlanExercise, createManualWorkout, exerciseMatchesArea, generateFreshWorkout, generateWorkout, getDailyRecommendation, getExerciseDecision, learningContextKey, movementPosition, orderWorkoutExercisesForFlow, programmingFamily, removePlanExercise, reorderPlanExercise, scalePlanExercise, swapPlanExercise } from './engine'
 import { emptyLearningEntry } from './learning'
 import type { BuilderPreferences, WorkoutSession } from './types'
 
@@ -49,6 +49,25 @@ describe('workout engine', () => {
     const kneeState={...defaultState,issues:[{id:'knee',area:'knees' as const,severity:'flare' as const,status:'active' as const,note:'',createdAt:new Date().toISOString(),side:'right' as const,resolvedAt:null}]}
     const plan=generateWorkout({...preferences,focusAreas:['lower_body']},kneeState,'knee-flare')
     expect(plan.exercises.every(item=>!exerciseMatchesArea(exerciseById.get(item.exerciseId)!, 'knees'))).toBe(true)
+  })
+
+  it('increases affected stretch holds while reducing affected training movements selected from the library',()=>{
+    const state={...defaultState,issues:[{id:'neck',area:'neck' as const,severity:'moderate' as const,status:'active' as const,note:'',createdAt:new Date().toISOString(),side:'bilateral' as const,resolvedAt:null}]}
+    const plan=createManualWorkout(['m31','u46'],state)
+    const stretch=plan.exercises.find(item=>item.exerciseId==='m31')!
+    const training=plan.exercises.find(item=>item.exerciseId==='u46')!
+
+    expect(exerciseById.get(stretch.exerciseId)?.category).toBe('stretching')
+    expect(stretch).toMatchObject({prescription:'30 sec / side 🎯',durationSeconds:60,adjusted:true})
+    expect(training.durationSeconds).toBeLessThan(exerciseById.get(training.exerciseId)!.durationSeconds)
+    expect(training.prescription).toContain('🩹')
+  })
+
+  it('keeps bilateral hold prescriptions and total timer duration in sync',()=>{
+    const plan=createManualWorkout(['m31'],defaultState)
+    const increased=adjustPlanPrescription(plan,0,1)
+
+    expect(increased.exercises[0]).toMatchObject({prescription:'25 sec / side',durationSeconds:50})
   })
 
   it('is deterministic for the same inputs and seed', () => {

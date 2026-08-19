@@ -1,5 +1,6 @@
 import { act,fireEvent,render,screen } from '@testing-library/react'
 import { defaultState } from '../storage/state'
+import { createManualWorkout } from '../domain/engine'
 import type { ActiveSession,WorkoutPlan } from '../domain/types'
 import { PlayerScreen,restSecondsForGoal } from './PlayerScreen'
 import { resetWorkoutAudioForTests } from '../audio/workoutAudio'
@@ -68,6 +69,26 @@ it('gives both sides their full allotted time after the get-ready countdown',()=
   act(()=>vi.advanceTimersByTime(10000))
   expect(screen.getByRole('heading',{name:/Single-Arm Dumbbell Row · Side 2/})).toBeInTheDocument()
   expect(screen.getByText('0:10')).toBeInTheDocument()
+  vi.useRealTimers()
+})
+
+it('plays an injury-adjusted bilateral stretch for the full increased hold on each side',()=>{
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-08-16T10:00:00Z'))
+  const startedAt=Date.now()
+  const state={...defaultState,issues:[{id:'neck',area:'neck' as const,severity:'moderate' as const,status:'active' as const,note:'',createdAt:new Date().toISOString(),side:'bilateral' as const,resolvedAt:null}]}
+  const plan=createManualWorkout(['m31'],state)
+  const session:ActiveSession={plan,index:0,phase:'get_ready',remainingSeconds:5,running:true,deadlineAt:startedAt+5000,startedAt,completedExerciseIds:[]}
+  render(<PlayerScreen session={session} state={state} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+
+  act(()=>vi.advanceTimersByTime(5000))
+  expect(screen.getByRole('heading',{name:'Neck Side Stretch'})).toBeInTheDocument()
+  expect(screen.getByText('0:30')).toBeInTheDocument()
+  expect(screen.getByText('30 sec / side')).toBeInTheDocument()
+
+  act(()=>vi.advanceTimersByTime(30000))
+  expect(screen.getByRole('heading',{name:'Neck Side Stretch · Side 2'})).toBeInTheDocument()
+  expect(screen.getByText('0:30')).toBeInTheDocument()
   vi.useRealTimers()
 })
 

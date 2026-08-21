@@ -15,3 +15,10 @@ it('highlights a harder adjusted exercise in red',()=>{
   expect(screen.getByRole('article')).toHaveClass('harder-adjusted')
   expect(screen.getByText('Harder')).toHaveClass('harder-badge')
 })
+
+it('shows exercise reasons as concise bullet points',()=>{
+  const exercise=exerciseById.get('x001')!
+  render(<ExerciseCard exercise={exercise} planned={{exerciseId:exercise.id,prescription:exercise.prescription,durationSeconds:exercise.durationSeconds,rationale:'supports strength · targets chest',section:'Main work'}}/>)
+  expect(screen.getByText('Why this exercise')).toBeInTheDocument()
+  expect(screen.getAllByRole('listitem').map(item=>item.textContent)).toEqual(['supports strength','targets chest'])
+})

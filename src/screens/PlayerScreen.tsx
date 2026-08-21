@@ -203,7 +203,7 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
       </div>
       <div className={remaining===0?'timer complete':'timer'}>{formatTime(remaining)}</div>
       <strong className="player-prescription">{displayedPrescription}</strong>
-      {!isPersonalised&&<small className="player-rationale">{current.rationale}</small>}
+      {!isPersonalised&&<ul className="player-rationale">{current.rationale.split(' · ').map(reason=><li key={reason}>{reason}</li>)}</ul>}
       <button className="player-modify-trigger" type="button" onClick={openModify}>Modify exercise <span aria-hidden="true">›</span></button>
     </section>
     <div className="player-actions"><button className="primary" onClick={logAndContinue}>{phase==='work'&&isBilateral(current)?'Log side & continue':index===plan.exercises.length-1?'Complete session':'Log & continue'} <span>→</span></button><div><button className="secondary" onClick={pause}>{running?'Pause':'Resume'}</button><button className="secondary" onClick={skip}>Skip</button></div>{exitButton}</div>

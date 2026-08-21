@@ -94,6 +94,12 @@ p { color:var(--muted); line-height:1.55; }
 .filter-pills { display:flex; flex-wrap:wrap; gap:9px; }
 .filter-pills button,.horizontal-filters button { border:1px solid var(--line); background:white; color:var(--ink); padding:10px 14px; border-radius:999px; font-size:.8rem; font-weight:700; text-transform:capitalize; }
 .filter-pills button.selected,.horizontal-filters button.selected { background:var(--forest); border-color:var(--forest); color:white; }
+.exercise-count-control { display:flex; align-items:end; gap:10px; }
+.exercise-count-control > button { min-height:42px; padding:10px 16px; border:1px solid var(--line); border-radius:999px; background:white; color:var(--ink); font-weight:700; }
+.exercise-count-control > button.selected { border-color:var(--forest); background:var(--forest); color:white; }
+.exercise-count-control label { display:grid; gap:5px; color:var(--muted); font-size:.7rem; font-weight:800; }
+.exercise-count-control input { width:150px; min-height:42px; padding:8px 12px; border:1px solid var(--line); border-radius:12px; background:white; color:var(--ink); font:inherit; }
+.constraint-note { display:block; margin-top:7px; color:var(--muted); }
 .range-label { display:flex; justify-content:space-between; font-weight:700; }
 .constraint-heading { margin-top:24px; }
 .builder-toggles { margin:24px 0; border-block:1px solid var(--line); }
@@ -197,7 +203,7 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .inspector-secondary-actions .remove { padding-inline:12px; color:var(--red); }
 .plan-screen .algorithm-note { display:block; padding:14px 18px; }
 .plan-screen .algorithm-note summary { display:flex; align-items:center; gap:9px; cursor:pointer; }
-.plan-screen .algorithm-note p { margin:10px 0 0; font-size:.76rem; }
+.plan-screen .algorithm-note ul { display:grid; gap:5px; margin:10px 0 0; padding-left:20px; font-size:.76rem; }
 .plan-footer-actions { display:flex; gap:10px; justify-content:flex-end; }
 .plan-footer-actions button { min-width:150px; }
 .plan-footer-actions .plan-footer-start { min-width:190px; }
@@ -220,7 +226,9 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .exercise-card.harder-adjusted .exercise-icon { background:#f6d8d2; color:#9d3c2f; }
 .exercise-copy p { margin:6px 0 0; font-size:.8rem; }
 .exercise-copy .prescription { color:var(--forest); font-weight:700; text-transform:capitalize; }
-.rationale { display:block; color:var(--muted); margin-top:8px; }
+.rationale { color:var(--muted); margin-top:8px; font-size:.72rem; }
+.rationale strong { color:var(--ink); }
+.rationale ul { display:grid; gap:2px; margin:4px 0 0; padding-left:18px; }
 .video-link { display:inline-flex; margin-top:10px; color:var(--forest); font-size:.72rem; font-weight:850; text-decoration:none; }
 .video-link:hover { text-decoration:underline; }
 .sticky-actions { display:grid; gap:12px; }
@@ -343,7 +351,7 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .timer.complete { color:#9bcbff; }
 .player-prescription { color:#9bcbff; text-transform:uppercase; letter-spacing:.08em; }
 .player-centre small { margin-top:12px; color:#a9c5e5; }
-.player-rationale { max-width:520px; line-height:1.45; }
+.player-rationale { display:grid; gap:3px; max-width:520px; margin:12px 0 0; padding-left:18px; color:#a9c5e5; font-size:.75rem; line-height:1.4; text-align:left; }
 .player-modify-trigger { display:flex; align-items:center; gap:9px; min-height:42px; margin-top:16px; padding:0 10px; border:0; border-radius:10px; background:transparent; color:#b9d8fa; font-size:.76rem; font-weight:800; }
 .player-modify-trigger:hover { color:white; background:rgba(143,195,255,.1); }
 .player-modify-trigger span { color:#8fc3ff; font-size:1.2rem; line-height:1; }

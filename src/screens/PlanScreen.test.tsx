@@ -11,11 +11,13 @@ it('shows every library selection together before splitting them into workout se
 
   expect(screen.getByRole('heading',{name:'All selected movements'})).toBeInTheDocument()
   expect(screen.getByRole('button',{name:'All selected movements, 4 exercises'})).toHaveAttribute('aria-pressed','true')
-  expect(screen.getAllByRole('listitem')).toHaveLength(4)
+  expect(within(screen.getByRole('list',{name:'All selected movements'})).getAllByRole('listitem')).toHaveLength(4)
   expect(screen.getByText('Jumping Jacks')).toBeInTheDocument()
   expect(screen.getByText('Dumbbell Floor Press')).toBeInTheDocument()
   expect(screen.queryByText(/Hold any row/)).not.toBeInTheDocument()
   expect(screen.queryByRole('button',{name:'+ Add exercise'})).not.toBeInTheDocument()
+  const whyThisSession=screen.getByText('Why this session?').closest('details')!
+  expect(within(whyThisSession).getAllByRole('listitem')).toHaveLength(2)
 })
 
 it('lets a library-built workout create and remove coherent main-circuit sets',()=>{
@@ -44,7 +46,7 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
   vi.useFakeTimers()
   const plan = generateWorkout({
     intention:'train', goal:'strength', durationMinutes:30, focusAreas:['full_body'], equipment:defaultState.profile.equipment,
-    level:2, includeConditioning:false, includeWarmup:false, exercisesPerRound:4, targetSets:2, recoveryModes:['mobility','stretching'],
+    level:2, includeConditioning:false, includeWarmup:false, includeMindfulness:false, exercisesPerRound:4, targetSets:2, recoveryModes:['mobility','stretching'],
   }, defaultState, 'plan-screen')
   const onReorder = vi.fn()
   const onAdd = vi.fn()
@@ -136,7 +138,7 @@ it('uses set navigation, whole-row dragging and an exercise inspector without mo
 it('uses helpful copy when an exercise description is blank',()=>{
   const generated=generateWorkout({
     intention:'train',goal:'strength',durationMinutes:30,focusAreas:['full_body'],equipment:defaultState.profile.equipment,
-    level:2,includeConditioning:false,includeWarmup:false,exercisesPerRound:3,targetSets:2,recoveryModes:['mobility','stretching'],
+    level:2,includeConditioning:false,includeWarmup:false,includeMindfulness:false,exercisesPerRound:3,targetSets:2,recoveryModes:['mobility','stretching'],
   },defaultState,'blank-description')
   const firstMainIndex=generated.exercises.findIndex(item=>item.section==='Main work'&&item.setNumber===1)
   const sourceExercise=exerciseById.get(generated.exercises[firstMainIndex].exerciseId)!
@@ -152,7 +154,7 @@ it('uses helpful copy when an exercise description is blank',()=>{
 it('turns the save action into a saved-workout link after saving',()=>{
   const plan=generateWorkout({
     intention:'train',goal:'strength',durationMinutes:15,focusAreas:['upper_body'],equipment:defaultState.profile.equipment,
-    level:2,includeConditioning:false,includeWarmup:false,exercisesPerRound:3,targetSets:1,recoveryModes:['mobility','stretching'],
+    level:2,includeConditioning:false,includeWarmup:false,includeMindfulness:false,exercisesPerRound:3,targetSets:1,recoveryModes:['mobility','stretching'],
   },defaultState,'save-plan')
   const onSave=vi.fn()
   const onViewSaved=vi.fn()
@@ -172,7 +174,7 @@ it('wires every inspector action and closes the inspector after avoiding or remo
   const actions={onEasier:vi.fn(),onHarder:vi.fn(),onAdjust:vi.fn(),onSwap:vi.fn(),onRemove:vi.fn(),onAvoid:vi.fn()}
   const noop=vi.fn()
   render(<PlanScreen plan={plan} customExercises={[]} isSaved={false} onStart={noop} onSave={noop} onViewSaved={noop} onRegenerate={noop} onSetCount={noop} onReorder={noop} onAdd={noop} {...actions}/>)
-  const row=screen.getByRole('listitem')
+  const row=within(screen.getByRole('list',{name:'Main work'})).getByRole('listitem')
   fireEvent.keyDown(row,{key:'Enter'})
   fireEvent.click(screen.getByRole('button',{name:/Easier/}))
   fireEvent.click(screen.getByRole('button',{name:/Harder/}))
@@ -193,7 +195,7 @@ it('wires every inspector action and closes the inspector after avoiding or remo
   expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
 })
 
-it('only offers exercises appropriate to the active section and focuses search',()=>{
+it('allows any exercise type in any routine section and focuses search',()=>{
   const plan=createManualWorkout(['x001','m5'],defaultState)
   const noop=vi.fn()
   render(<PlanScreen plan={plan} customExercises={[]} isSaved={false} onStart={noop} onSave={noop} onViewSaved={noop} onRegenerate={noop} onSetCount={noop} onEasier={noop} onHarder={noop} onAdjust={noop} onSwap={noop} onReorder={noop} onAdd={noop} onRemove={noop} onAvoid={noop}/>)
@@ -202,9 +204,7 @@ it('only offers exercises appropriate to the active section and focuses search',
   const search=screen.getByRole('searchbox',{name:'Search exercises to add'})
   expect(search).toHaveFocus()
   fireEvent.change(search,{target:{value:'Dumbbell Floor Press'}})
-  expect(screen.getByText('No matching exercises available for this section.')).toBeInTheDocument()
-  fireEvent.change(search,{target:{value:'Neck Side Stretch'}})
-  expect(screen.getByRole('button',{name:/Neck Side Stretch/})).toBeInTheDocument()
+  expect(screen.getByRole('button',{name:/Dumbbell Floor Press/})).toBeInTheDocument()
 })
 
 it('cancels a touch drag without reordering and keeps the combined manual overview unique',()=>{
@@ -214,7 +214,7 @@ it('cancels a touch drag without reordering and keeps the combined manual overvi
   render(<PlanScreen plan={plan} customExercises={[]} isSaved={false} onStart={noop} onSave={noop} onViewSaved={noop} onRegenerate={noop} onSetCount={noop} onEasier={noop} onHarder={noop} onAdjust={noop} onSwap={noop} onReorder={onReorder} onAdd={noop} onRemove={noop} onAvoid={noop}/>)
   expect(screen.getByRole('button',{name:'All selected movements, 4 exercises'})).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button',{name:'Set 1, 2 exercises'}))
-  const row=screen.getAllByRole('listitem')[0]
+  const row=within(screen.getByRole('list',{name:'Main circuit — Set 1 of 2'})).getAllByRole('listitem')[0]
   fireEvent.touchStart(row,{changedTouches:[{identifier:4,clientX:10,clientY:10}]})
   act(()=>vi.advanceTimersByTime(1000))
   fireEvent.touchMove(window,{touches:[{identifier:4,clientX:10,clientY:30}]})

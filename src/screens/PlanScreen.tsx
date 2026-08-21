@@ -43,7 +43,7 @@ function planGroups(plan: WorkoutPlan): PlanGroup[] {
           ? 'Drag any exercise to update the circuit order in every set'
           : item.section === 'Condition'
             ? 'Capacity finisher'
-            : 'Mobility and mindful close-out'
+            : 'Recovery and optional mindfulness'
       group = { key, label, note, indexes: [] }
       groups.push(group)
     }
@@ -84,10 +84,8 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
   const selectedExercise = selectedEntry ? resolve(selectedEntry.exerciseId) : null
   const activeExerciseIds = new Set(activeGroup?.indexes.map(index => plan.exercises[index].exerciseId) ?? [])
   const normalizedSearch = exerciseSearch.trim().toLowerCase()
-  const allowedCategories=activeGroup?.key.startsWith('main-')||activeGroup?.key==='Main work'?['upper','lower','core']:activeGroup?.key==='Prepare'?['warmup']:activeGroup?.key==='Condition'?['conditioning']:activeGroup?.key==='Restore'?['mobility','stretching','mindfulness']:[]
-  const addCandidates = [...exercises, ...customExercises].filter(exercise => allowedCategories.includes(exercise.category)&&!activeExerciseIds.has(exercise.id)
+  const addCandidates = [...exercises, ...customExercises].filter(exercise => !activeExerciseIds.has(exercise.id)
     && (!normalizedSearch || `${exercise.name} ${exercise.pattern} ${exercise.primaryMuscles.join(' ')}`.toLowerCase().includes(normalizedSearch)))
-    .slice(0, 10)
 
   useEffect(() => {
     if (!groups.some(group => group.key === activeGroupKey)) setActiveGroupKey(firstMainGroup)
@@ -307,10 +305,10 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
           {!isAllOverview&&<div className="plan-heading-actions"><span className="drag-instruction">↕ Hold any row 1 second, then drag to reorder</span><button className="add-exercise-button" onClick={toggleAddExercise} aria-expanded={addingToGroupKey === activeGroup.key}>+ Add exercise</button></div>}
         </div>
         {addingToGroupKey === activeGroup.key && <section className="exercise-picker" aria-label={`Add exercise to ${activeGroup.label}`}>
-          <header><div><strong>Add an exercise</strong><small>{activeGroup.key.startsWith('main-') ? 'It will be added to every main set.' : `It will be added to ${activeGroup.label}.`}</small></div><button onClick={toggleAddExercise} aria-label="Close exercise picker">×</button></header>
+          <header><div><strong>Add any exercise</strong><small>{activeGroup.key.startsWith('main-') ? 'Any movement type can be combined here and will be added to every main set.' : `Any movement type can be added to ${activeGroup.label}.`}</small></div><button onClick={toggleAddExercise} aria-label="Close exercise picker">×</button></header>
           <input autoFocus type="search" value={exerciseSearch} onChange={event => setExerciseSearch(event.target.value)} placeholder="Search by exercise, muscle, or pattern…" aria-label="Search exercises to add"/>
           <div className="exercise-picker-results">{addCandidates.map(exercise => <button key={exercise.id} onClick={() => { onAdd(activeGroup.indexes[activeGroup.indexes.length - 1], exercise.id); setAddingToGroupKey(null); setExerciseSearch('') }}><span><strong>{exercise.name}</strong><small>{pretty(exercise.pattern)} · Level {exercise.level}</small></span><b>Add</b></button>)}</div>
-          {!addCandidates.length && <p>No matching exercises available for this section.</p>}
+          {!addCandidates.length && <p>No matching exercises.</p>}
         </section>}
         <div className="set-exercises" role="list" aria-label={activeGroup.label}>
           {activeGroup.indexes.map((index, position) => {
@@ -376,7 +374,7 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
       </aside>}
     </div>}
 
-    <details className="algorithm-note"><summary><span>✦</span><strong>Why this session?</strong></summary><p>{plan.insights.join(' ')}</p></details>
+    <details className="algorithm-note"><summary><span>✦</span><strong>Why this session?</strong></summary><ul>{plan.insights.map((insight,index)=><li key={`${index}_${insight}`}>{insight}</li>)}</ul></details>
     {isSaved&&<div className="save-confirmation" role="status">✓ Workout saved on this device</div>}
     <div className="plan-footer-actions"><button className="secondary" onClick={onRegenerate}>Regenerate</button><button className={`secondary ${isSaved?'saved':''}`} onClick={isSaved?onViewSaved:onSave}>{isSaved?'View saved':'Save workout'}</button><button className="primary plan-footer-start" onClick={onStart}>Start session <span>→</span></button></div>
   </div>

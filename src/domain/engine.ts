@@ -260,7 +260,7 @@ export function getDailyRecommendation(state:AppState):{preferences:BuilderPrefe
           : `${focusAreas[0].replaceAll('_',' ')} selected because it is one of your freshest training areas today.`
   return{preferences:{
     intention,goal:shouldRecover?'mobility':state.profile.goal,durationMinutes:'auto',focusAreas,equipment:state.profile.equipment,level:state.profile.level,
-    includeConditioning:!shouldRecover&&(state.profile.goal==='endurance'||state.profile.goal==='general'),includeWarmup:!shouldRecover,
+    includeConditioning:!shouldRecover&&(state.profile.goal==='endurance'||state.profile.goal==='general'),includeWarmup:!shouldRecover,includeMindfulness:false,
     exercisesPerRound:'auto',targetSets:'auto',recoveryModes:['mobility','stretching'],
   },reason}
 }
@@ -529,7 +529,7 @@ function rationale(exercise: Exercise, preferences: BuilderPreferences, state: A
 }
 
 function requestedMainCount(preferences: BuilderPreferences, state:AppState) {
-  if (preferences.exercisesPerRound !== 'auto') return Math.max(1, Math.min(12, preferences.exercisesPerRound))
+  if (preferences.exercisesPerRound !== 'auto') return Math.max(1, Math.round(preferences.exercisesPerRound))
   const base=preferences.durationMinutes !== 'auto' && preferences.durationMinutes <= 15?3:preferences.durationMinutes !== 'auto'&&preferences.durationMinutes>=45?6:4
   const learned=state.learningModel.routineContexts[routineKey(preferences)]
   if(!learned||learned.evidence<2||(learned.confidence<=.1)||!learned.preferredMainCount||(learned.averageCompletionRate??0)<.7)return base
@@ -612,7 +612,7 @@ function buildBalanceReport(plan: WorkoutPlan, preferences: BuilderPreferences, 
   expectedSlots.forEach(movementSlot => {
     if (!firstSet.some(exercise => slotMatches(exercise, movementSlot))) issues.push(`Missing ${movementSlot.label} coverage.`)
   })
-  if (plan.exercises.filter(item => resolveExercise(item.exerciseId, state)?.category === 'mindfulness').length !== 1) issues.push('The plan must include exactly one mindful close-out.')
+  if (preferences.includeMindfulness && plan.exercises.filter(item => resolveExercise(item.exerciseId, state)?.category === 'mindfulness').length !== 1) issues.push('The requested mindful close-out could not be included.')
   const focusExercises=preferences.intention==='recover'
     ? selected.filter(exercise=>exercise.category!=='mindfulness')
     : firstSet
@@ -664,7 +664,7 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
   const restoreMovements = pickAuxiliary(recoveryPool, recoveryCount, preferences, state, `${seed}:restore`, used, main, discouragedIds,'Restore')
   restoreMovements.forEach(exercise => used.add(exercise.id))
   const meditationPool = allExercises(state).filter(exercise => isEligible(exercise, preferences, state, ['mindfulness']))
-  const meditation = pickAuxiliary(meditationPool, 1, preferences, state, `${seed}:meditation`, used, main, discouragedIds,'Restore')
+  const meditation = pickAuxiliary(meditationPool, preferences.includeMindfulness ? 1 : 0, preferences, state, `${seed}:meditation`, used, main, discouragedIds,'Restore')
 
   const planned: WorkoutExercise[] = []
   warmup.forEach(exercise => planned.push(planItem(exercise, 'Prepare', preferences, state)))
@@ -693,14 +693,16 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
     focusAreas: preferences.focusAreas,
     insights: [
       preferences.intention === 'recover'
-        ? `${restoreMovements.length} targeted mobility/stretch movements and one mindful close-out.`
-        : `${main.length} main movements across ${totalSets} set${totalSets === 1 ? '' : 's'}: ${familyCoverage.join(', ')}.`,
-      `Estimated ${durationMinutes} min${desiredMinutes ? ` against a ${desiredMinutes} min target` : ''}.`,
-      readiness.status === 'ready' ? 'Current training load is ready.' : `Readiness is ${readiness.status}; selection was adjusted for recent load and automatic volume adapts for affected main-work areas.`,
-      state.issues.some(issue => issue.status === 'active') ? 'Active issues were applied as safety constraints.' : 'No active issue constraints applied.',
-      Object.keys(state.exerciseStats).length ? 'Exercise and movement-family history informed progression and variety.' : 'Complete and rate sessions to begin progression.',
-      learnedRoutine&&learnedRoutine.evidence>=2&&learnedRoutine.confidence>.1&&(preferences.exercisesPerRound==='auto'||preferences.targetSets==='auto') ? `Automatic circuit shape reflects ${learnedRoutine.positive} positively rated session${learnedRoutine.positive===1?'':'s'} in this training context.` : 'Automatic circuit shape will adapt after repeated successful sessions.',
-      'Exercises are grouped by setup to flow from standing through supported and floor work within each section.',
+        ? `${restoreMovements.length} recovery movement${restoreMovements.length === 1 ? '' : 's'}${meditation.length ? ' plus a mindful close-out' : ''}.`
+        : `${main.length} movement${main.length === 1 ? '' : 's'} × ${totalSets} set${totalSets === 1 ? '' : 's'}${familyCoverage.length ? `: ${familyCoverage.join(', ')}` : ''}${meditation.length ? '; mindful close-out included' : ''}.`,
+      `About ${durationMinutes} min${desiredMinutes ? ` for a ${desiredMinutes} min target` : ''}.`,
+      readiness.status === 'ready' ? 'Current training load is ready.' : `Readiness is ${readiness.status}; volume and exercise choices were adjusted.`,
+      state.issues.some(issue => issue.status === 'active')
+        ? 'Active issues were applied as safety constraints.'
+        : Object.keys(state.exerciseStats).length
+          ? 'Your exercise history informed progression and variety.'
+          : 'Future session ratings will personalise progression and variety.',
+      ...(learnedRoutine&&learnedRoutine.evidence>=2&&learnedRoutine.confidence>.1&&(preferences.exercisesPerRound==='auto'||preferences.targetSets==='auto') ? [`Automatic structure reflects ${learnedRoutine.positive} positively rated session${learnedRoutine.positive===1?'':'s'} in this context.`] : []),
       ...warnings,
     ],
   }
@@ -727,6 +729,7 @@ function compatiblePreferences(plan: WorkoutPlan, state: AppState): BuilderPrefe
     level: state.profile.level,
     includeConditioning: true,
     includeWarmup: true,
+    includeMindfulness: plan.exercises.some(item=>resolveExercise(item.exerciseId,state)?.category==='mindfulness'),
     exercisesPerRound: 'auto',
     targetSets: 'auto',
     recoveryModes: ['mobility', 'stretching'],
@@ -973,6 +976,7 @@ export function generateCategoryWorkout(area: MuscleArea, state: AppState, durat
     level: state.profile.level,
     includeConditioning: area === 'full_body',
     includeWarmup: !recover,
+    includeMindfulness: false,
     exercisesPerRound: 'auto',
     targetSets: 'auto',
     recoveryModes: ['mobility', 'stretching'],
@@ -984,7 +988,7 @@ export function createManualWorkout(ids: string[], state: AppState): WorkoutPlan
     .filter(exercise=>!state.profile.avoidList.includes(exercise.id)&&!isFlareExcluded(exercise,state)&&(exercise.optIn!=='advancedBridges'||state.profile.advancedBridges))
   const preferences: BuilderPreferences = {
     intention: 'train', goal: state.profile.goal, durationMinutes: 'auto', focusAreas: [], equipment: state.profile.equipment,
-    level: state.profile.level, includeConditioning: true, includeWarmup: true, exercisesPerRound: 'auto', targetSets: 1,
+    level: state.profile.level, includeConditioning: true, includeWarmup: true, includeMindfulness: selected.some(exercise=>exercise.category==='mindfulness'), exercisesPerRound: 'auto', targetSets: 1,
     recoveryModes: ['mobility', 'stretching'],
   }
   const manual: WorkoutExercise[] = selected.map(exercise => planItem(

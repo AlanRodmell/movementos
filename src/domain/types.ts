@@ -335,6 +335,7 @@ export interface BuilderPreferences {
   level: Level
   includeConditioning: boolean
   includeWarmup: boolean
+  includeMindfulness: boolean
   exercisesPerRound: number | 'auto'
   targetSets: number | 'auto'
   recoveryModes: RecoveryMode[]

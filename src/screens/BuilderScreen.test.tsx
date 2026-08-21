@@ -39,17 +39,17 @@ it('submits every training constraint and retains choices after backwards naviga
   fireEvent.click(screen.getByRole('button',{name:/continue/i}))
   fireEvent.click(screen.getByRole('button',{name:/continue/i}))
   fireEvent.click(screen.getByRole('button',{name:'45 min'}))
-  const exerciseControls=screen.getByRole('heading',{name:'Exercises per round'}).nextElementSibling!
   const setControls=screen.getByRole('heading',{name:'Target sets'}).nextElementSibling!
-  fireEvent.click(within(exerciseControls as HTMLElement).getByRole('button',{name:'6'}))
+  fireEvent.change(screen.getByRole('spinbutton',{name:'Custom exercises per round'}),{target:{value:'11'}})
   fireEvent.click(within(setControls as HTMLElement).getByRole('button',{name:'5'}))
   fireEvent.click(screen.getByRole('button',{name:'Kettlebell'}))
   fireEvent.click(screen.getByRole('button',{name:'Previous step'}))
   fireEvent.click(screen.getByRole('button',{name:/continue/i}))
   expect(screen.getByRole('button',{name:'45 min'})).toHaveClass('selected')
+  expect(screen.getByRole('spinbutton',{name:'Custom exercises per round'})).toHaveValue(11)
   expect(within(screen.getByRole('heading',{name:'Target sets'}).nextElementSibling as HTMLElement).getByRole('button',{name:'5'})).toHaveClass('selected')
   fireEvent.click(screen.getByRole('button',{name:/generate my session/i}))
-  expect(onGenerate).toHaveBeenCalledWith(expect.objectContaining({intention:'train',goal:'endurance',durationMinutes:45,exercisesPerRound:6,targetSets:5,includeConditioning:true,equipment:expect.arrayContaining(['kettlebell'])}))
+  expect(onGenerate).toHaveBeenCalledWith(expect.objectContaining({intention:'train',goal:'endurance',durationMinutes:45,exercisesPerRound:11,targetSets:5,includeConditioning:true,includeMindfulness:false,equipment:expect.arrayContaining(['kettlebell'])}))
 })
 
 it('uses recovery-only constraints and never allows all recovery modes to be removed',()=>{
@@ -65,9 +65,11 @@ it('uses recovery-only constraints and never allows all recovery modes to be rem
   fireEvent.click(screen.getByRole('button',{name:/continue/i}))
   expect(screen.queryByRole('heading',{name:'Target sets'})).not.toBeInTheDocument()
   expect(screen.getByRole('checkbox',{name:/Preparation warm-up/})).not.toBeChecked()
+  expect(screen.getByRole('checkbox',{name:/Mindfulness close-out/})).not.toBeChecked()
+  fireEvent.click(screen.getByRole('checkbox',{name:/Mindfulness close-out/}))
   fireEvent.click(screen.getByRole('button',{name:'30 min'}))
   fireEvent.click(screen.getByRole('button',{name:/generate my session/i}))
-  expect(onGenerate).toHaveBeenCalledWith(expect.objectContaining({intention:'recover',goal:'mobility',durationMinutes:30,includeConditioning:false,includeWarmup:false,recoveryModes:['stretching']}))
+  expect(onGenerate).toHaveBeenCalledWith(expect.objectContaining({intention:'recover',goal:'mobility',durationMinutes:30,includeConditioning:false,includeWarmup:false,includeMindfulness:true,recoveryModes:['stretching']}))
 })
 
 it('restores a same-day check-in and ignores an old one',()=>{

@@ -3,7 +3,7 @@ import { defaultState } from '../storage/state'
 import type { BuilderPreferences, Exercise, MuscleArea, WorkoutPlan } from './types'
 import { adjustPlanPrescription, createManualWorkout, exerciseMatchesArea, generateWorkout, getReadiness, setPlanSetCount } from './engine'
 
-const base:BuilderPreferences={intention:'train',goal:'general',durationMinutes:30,focusAreas:['full_body'],equipment:['none','wall','chair'],level:2,includeConditioning:true,includeWarmup:true,exercisesPerRound:5,targetSets:3,recoveryModes:['mobility','stretching']}
+const base:BuilderPreferences={intention:'train',goal:'general',durationMinutes:30,focusAreas:['full_body'],equipment:['none','wall','chair'],level:2,includeConditioning:true,includeWarmup:true,includeMindfulness:false,exercisesPerRound:5,targetSets:3,recoveryModes:['mobility','stretching']}
 const issue=(area:MuscleArea,severity:'mild'|'moderate'|'flare'='moderate',status:'active'|'resolved'='active',side:'left'|'right'|'bilateral'='bilateral')=>({id:`${area}_${severity}_${status}_${side}`,area,severity,status,note:'',createdAt:new Date().toISOString(),side,resolvedAt:status==='resolved'?new Date().toISOString():null})
 
 describe('safety invariants',()=>{
@@ -58,7 +58,7 @@ describe('generator invariants across seeds and equipment',()=>{
       expect(plan.exercises.some(item=>item.exerciseId===avoided)).toBe(false)
       expect(resolved.every(exercise=>!exerciseMatchesArea(exercise,'wrists'))).toBe(true)
       expect(resolved.every(exercise=>exercise.equipment.includes('none')||exercise.equipment.every(item=>equipment.includes(item as never)))).toBe(true)
-      expect(resolved.filter(exercise=>exercise.category==='mindfulness')).toHaveLength(1)
+      expect(resolved.filter(exercise=>exercise.category==='mindfulness')).toHaveLength(0)
       const setIds=[1,2,3].map(setNumber=>plan.exercises.filter(item=>item.section==='Main work'&&item.setNumber===setNumber).map(item=>item.exerciseId))
       expect(new Set(setIds[0]).size).toBe(setIds[0].length)
       expect(setIds[1]).toEqual(setIds[0])

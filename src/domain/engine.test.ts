@@ -4,7 +4,7 @@ import { addPlanExercise, adjustPlanPrescription, applySessionCompletion, avoidP
 import { emptyLearningEntry } from './learning'
 import type { BuilderPreferences, WorkoutSession } from './types'
 
-const preferences: BuilderPreferences = { intention:'train', goal:'strength', durationMinutes:30, focusAreas:['upper_body'], equipment:['none','wall','chair'], level:2, includeConditioning:false, includeWarmup:true, exercisesPerRound:'auto', targetSets:'auto', recoveryModes:['mobility','stretching'] }
+const preferences: BuilderPreferences = { intention:'train', goal:'strength', durationMinutes:30, focusAreas:['upper_body'], equipment:['none','wall','chair'], level:2, includeConditioning:false, includeWarmup:true, includeMindfulness:false, exercisesPerRound:'auto', targetSets:'auto', recoveryModes:['mobility','stretching'] }
 
 it('maps mid-back focus to exercises targeting the back',()=>{
   const backExercise=exercises.find(exercise=>exercise.primaryMuscles.includes('upper_back'))
@@ -126,7 +126,7 @@ describe('workout engine', () => {
     expect(recovery.reason).toContain('today’s check-in')
     const recoveryPlan=generateWorkout(recovery.preferences,checkInState,'daily-recovery')
     expect(recoveryPlan.targetDurationMinutes).toBe(recoveryPlan.durationMinutes)
-    expect(recoveryPlan.exercises).toHaveLength(5)
+    expect(recoveryPlan.exercises).toHaveLength(4)
     expect(recoveryPlan.exercises.some(item=>exerciseMatchesArea(exerciseById.get(item.exerciseId)!, 'neck'))).toBe(true)
     expect(recoveryPlan.balanceReport?.issues.some(issue=>issue.includes('neck coverage'))).toBe(false)
 
@@ -207,11 +207,19 @@ describe('workout engine', () => {
     expect(original.exercises[0]).toMatchObject({exerciseId:'x001',scaled:null,originalLevel:1})
   })
 
-  it('includes exactly one meditation in every generated plan',()=>{
-    const plan=generateWorkout({...preferences,durationMinutes:45},defaultState,'one-meditation')
-    const meditations=plan.exercises.filter(item=>exerciseById.get(item.exerciseId)?.category==='mindfulness')
+  it('only includes a mindful close-out when requested',()=>{
+    const without=generateWorkout({...preferences,durationMinutes:45},defaultState,'no-meditation')
+    expect(without.exercises.filter(item=>exerciseById.get(item.exerciseId)?.category==='mindfulness')).toHaveLength(0)
+
+    const withMindfulness=generateWorkout({...preferences,durationMinutes:45,includeMindfulness:true},defaultState,'one-meditation')
+    const meditations=withMindfulness.exercises.filter(item=>exerciseById.get(item.exerciseId)?.category==='mindfulness')
     expect(meditations).toHaveLength(1)
-    expect(plan.exercises.at(-1)?.exerciseId).toBe(meditations[0].exerciseId)
+    expect(withMindfulness.exercises.at(-1)?.exerciseId).toBe(meditations[0].exerciseId)
+  })
+
+  it('accepts an unrestricted requested exercise count and uses the safe catalogue available',()=>{
+    const plan=generateWorkout({...preferences,focusAreas:['full_body'],durationMinutes:'auto',exercisesPerRound:13,targetSets:1},defaultState,'unrestricted-count')
+    expect(plan.exercises.filter(item=>item.section==='Main work'&&item.setNumber===1)).toHaveLength(13)
   })
 
   it('honours exercises per round, target sets and optional warm-up',()=>{

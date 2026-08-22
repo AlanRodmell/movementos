@@ -8,17 +8,29 @@ import { bodyAreaLabel } from '../data/bodyAreas'
 const formatTime=(seconds:number)=>`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`
 const displayArea=(area:MuscleArea)=>{const label=bodyAreaLabel(area);return label[0].toUpperCase()+label.slice(1)}
 const isBilateral=(item:WorkoutExercise)=>/side|each|leg|arm/i.test(item.prescription)
-const workSeconds=(item:WorkoutExercise,phase:ActiveSession['phase'])=>phase==='switch_sides'||isBilateral(item)?Math.max(1,Math.round(item.durationSeconds/2)):item.durationSeconds
+export const timedPrescriptionSeconds=(prescription:string)=>{
+  const match=prescription.replace(/🩹|🎯/gu,'').match(/(\d+(?:\.\d+)?)(?:\s*[-–]\s*(\d+(?:\.\d+)?))?\s*(seconds?|secs?|minutes?|mins?)\b/i)
+  if(!match)return null
+  const value=Number(match[2]??match[1])
+  return Math.max(1,Math.round(value*(/^min/i.test(match[3])?60:1)))
+}
+export const isTimedPrescription=(prescription:string)=>timedPrescriptionSeconds(prescription)!==null
+const workSeconds=(item:WorkoutExercise)=>timedPrescriptionSeconds(item.prescription)??item.durationSeconds
+const phaseHasTimer=(phase:ActiveSession['phase'],item:WorkoutExercise|undefined)=>phase==='get_ready'||phase==='rest'||((phase==='work'||phase==='switch_sides')&&Boolean(item&&isTimedPrescription(item.prescription)))
 export const restSecondsForGoal=(goal:Goal)=>({strength:30,muscle:20,general:15,endurance:10,mobility:10})[goal]
 type IssueDraft={area:MuscleArea;severity:'mild'|'moderate'|'flare';side:'left'|'right'|'bilateral'}
 
 export function PlayerScreen({ session, state, customExercises, soundEnabled, waitBetweenExercises, areaLoadBefore, onProgress, onComplete, onCreateIssue,onExit }: { session: ActiveSession; state:AppState; customExercises: Exercise[]; soundEnabled: boolean; waitBetweenExercises:boolean; areaLoadBefore: Partial<Record<Category,number>>; onProgress: (session: ActiveSession) => void; onComplete: (session: WorkoutSession) => void;onCreateIssue?:(area:MuscleArea,severity:'mild'|'moderate'|'flare',side:'left'|'right'|'bilateral',note:string)=>void; onExit: () => void }) {
+  const initialItem=session.plan.exercises[session.index]
+  const initialPhase=session.phase??'work'
+  const initialPhaseHasTimer=phaseHasTimer(initialPhase,initialItem)
+  const initialRunning=session.running&&initialPhaseHasTimer
   const [plan,setPlan]=useState(session.plan)
   const [index,setIndex]=useState(session.index)
-  const [phase,setPhase]=useState<ActiveSession['phase']>(session.phase??'work')
-  const initialRemaining=session.running&&session.deadlineAt?Math.max(0,Math.ceil((session.deadlineAt-Date.now())/1000)):session.remainingSeconds
+  const [phase,setPhase]=useState<ActiveSession['phase']>(initialPhase)
+  const initialRemaining=initialPhaseHasTimer?(initialRunning&&session.deadlineAt?Math.max(0,Math.ceil((session.deadlineAt-Date.now())/1000)):session.remainingSeconds):0
   const [remaining,setRemaining]=useState(initialRemaining)
-  const [running,setRunning]=useState(session.running)
+  const [running,setRunning]=useState(initialRunning)
   const [completed,setCompleted]=useState<string[]>(session.completedExerciseIds)
   const [actions,setActions]=useState<WorkoutAction[]>(session.actions??[])
   const [finished,setFinished]=useState(false)
@@ -29,7 +41,7 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   const [createdIssueIds,setCreatedIssueIds]=useState<string[]>([])
   const [modifyOpen,setModifyOpen]=useState(false)
   const [changeNotice,setChangeNotice]=useState('')
-  const deadline=useRef(session.running&&session.deadlineAt?session.deadlineAt:Date.now()+initialRemaining*1000)
+  const deadline=useRef(initialRunning?(session.deadlineAt??Date.now()+initialRemaining*1000):0)
   const current=plan.exercises[index]
   const exercise=current?exerciseById.get(current.exerciseId)??customExercises.find(item=>item.id===current.exerciseId):undefined
   const nextItem=plan.exercises[index+1]
@@ -54,6 +66,11 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
     deadline.current=shouldRun?Date.now()+seconds*1000:0
   }
 
+  const startWorkPhase=(item:WorkoutExercise,nextPhase:'work'|'switch_sides')=>{
+    const timed=isTimedPrescription(item.prescription)
+    startPhase(nextPhase,timed?workSeconds(item):0,timed)
+  }
+
   const finishExercise=(log:boolean,bypassWait=false)=>{
     if(log&&current){setCompleted(items=>[...items,current.exerciseId]);recordAction('completed')}
     if(index>=plan.exercises.length-1){setRunning(false);setFinished(true);return}
@@ -62,7 +79,7 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   }
 
   const completeWorkPhase=(bypassWait=false)=>{
-    if(phase==='work'&&current&&isBilateral(current)){startPhase('switch_sides',workSeconds(current,'switch_sides'),true);return}
+    if(phase==='work'&&current&&isBilateral(current)){startWorkPhase(current,'switch_sides');return}
     finishExercise(true,bypassWait)
   }
 
@@ -71,11 +88,11 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
     const item=plan.exercises[next]
     if(!item){setRunning(false);setFinished(true);return}
     setIndex(next)
-    startPhase('work',workSeconds(item,'work'),true)
+    startWorkPhase(item,'work')
   }
 
   const onPhaseComplete=()=>{
-    if(phase==='get_ready'&&current){startPhase('work',workSeconds(current,'work'),true);return}
+    if(phase==='get_ready'&&current){startWorkPhase(current,'work');return}
     if(phase==='work'||phase==='switch_sides'){completeWorkPhase();return}
     if(phase==='rest')startNextExercise()
   }
@@ -164,7 +181,7 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   const progress=((index+1)/plan.exercises.length)*100
   if(phase==='rest')return <div className="player-screen"><div className="player-top"><span>REST</span><strong>{index+1} / {plan.exercises.length}</strong></div><div className="player-progress"><i style={{width:`${progress}%`}}/></div><section className="player-centre rest-phase"><span className="eyebrow">REST BLOCK</span><h1>Recover</h1><div className="timer">{formatTime(remaining)}</div><div className="player-next-card"><small>STARTS AUTOMATICALLY</small><strong>{nextExercise?.name??'Session complete'}</strong></div></section><div className="player-actions"><button className="primary" onClick={skip}>Skip rest <span>→</span></button><div><button className="secondary" onClick={pause}>{running?'Pause rest':'Resume rest'}</button></div>{exitButton}</div></div>
 
-  const changePlan=(next:typeof plan)=>{setPlan(next);const changed=next.exercises[index];const seconds=workSeconds(changed,phase);setRemaining(seconds);deadline.current=Date.now()+seconds*1000}
+  const changePlan=(next:typeof plan)=>{setPlan(next);const changed=next.exercises[index];setRemaining(isTimedPrescription(changed.prescription)?workSeconds(changed):0);setRunning(false);deadline.current=0}
   const changeDifficulty=(direction:-1|1)=>{
     const next=scalePlanExercise(plan,index,direction,state)
     if(next===plan){setChangeNotice(`No ${direction<0?'easier':'harder'} option is available for this exercise.`);return}
@@ -190,6 +207,7 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
     setChangeNotice('Exercise swapped for today. We’ll remember this choice.')
   }
   const openModify=()=>{pauseForSecondaryAction();setChangeNotice('');setModifyOpen(true)}
+  const timedExercise=isTimedPrescription(current.prescription)
   return <div className={`player-screen ${isPersonalised?'player-personalised':''}`} onPointerDownCapture={()=>soundEnabled&&unlockWorkoutAudio()}>
     {isPersonalised&&<div className="player-adaptive-banner"><span aria-hidden="true">✦</span><div><strong>{current.adjusted?'PERSONALISED FOR TODAY':'ADJUSTED BY YOU'}</strong><small>{adjustmentContext}</small></div></div>}
     <div className="player-top"><span>{current.section}{current.setNumber?` · Set ${current.setNumber}/${current.totalSets}`:''}</span><strong>{index+1} / {plan.exercises.length}</strong></div>
@@ -201,17 +219,16 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
         <p className="player-cue">{exercise.description}</p>
         <a className="player-video-link" href={exerciseVideoUrl(exercise)} target="_blank" rel="noopener noreferrer" onClick={pauseForSecondaryAction}>▶ Watch demo</a>
       </div>
-      <div className={remaining===0?'timer complete':'timer'}>{formatTime(remaining)}</div>
-      <strong className="player-prescription">{displayedPrescription}</strong>
+      {timedExercise?<div className={remaining===0?'timer complete':'timer'}>{formatTime(remaining)}</div>:<div className="player-rep-target"><small>REP TARGET</small><strong>{displayedPrescription}</strong></div>}
       {!isPersonalised&&<ul className="player-rationale">{current.rationale.split(' · ').map(reason=><li key={reason}>{reason}</li>)}</ul>}
       <button className="player-modify-trigger" type="button" onClick={openModify}>Modify exercise <span aria-hidden="true">›</span></button>
     </section>
-    <div className="player-actions"><button className="primary" onClick={logAndContinue}>{phase==='work'&&isBilateral(current)?'Log side & continue':index===plan.exercises.length-1?'Complete session':'Log & continue'} <span>→</span></button><div><button className="secondary" onClick={pause}>{running?'Pause':'Resume'}</button><button className="secondary" onClick={skip}>Skip</button></div>{exitButton}</div>
+    <div className="player-actions"><button className="primary" onClick={logAndContinue}>{phase==='work'&&isBilateral(current)?'Log side & continue':index===plan.exercises.length-1?'Complete session':'Log & continue'} <span>→</span></button><div>{timedExercise&&<button className="secondary" onClick={pause}>{running?'Pause':'Resume'}</button>}<button className="secondary" onClick={skip}>Skip</button></div>{exitButton}</div>
     {modifyOpen&&<div className="player-modify-backdrop" onPointerDown={()=>setModifyOpen(false)}>
       <section className="player-modify-sheet" role="dialog" aria-modal="true" aria-labelledby="modify-exercise-title" onPointerDown={event=>event.stopPropagation()}>
         <span className="player-sheet-grabber" aria-hidden="true"/>
         <header><div><span className="eyebrow">MODIFY EXERCISE</span><h2 id="modify-exercise-title">Make it work for today</h2></div><button autoFocus className="player-modify-close" type="button" aria-label="Close modify exercise" onClick={()=>setModifyOpen(false)}>×</button></header>
-        <p>The timer is paused while you make a change.</p>
+        <p>{timedExercise?'The timer is paused while you make a change.':'Make a change before logging this rep target.'}</p>
         <div className="player-modify-grid"><button type="button" onClick={()=>changeDifficulty(-1)}>Make easier</button><button type="button" onClick={()=>changeDifficulty(1)}>Make harder</button></div>
         <div className="player-prescription-adjuster"><button type="button" aria-label="Reduce reps or time" onClick={()=>changePrescription(-1)}>−</button><div><small>CURRENT PRESCRIPTION</small><strong>{displayedPrescription}</strong></div><button type="button" aria-label="Increase reps or time" onClick={()=>changePrescription(1)}>+</button></div>
         <button className="player-swap-action" type="button" onClick={swap}>Swap exercise</button>

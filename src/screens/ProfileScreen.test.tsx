@@ -67,7 +67,7 @@ it('creates a normalised custom exercise and clamps input limits',()=>{
   fireEvent.change(within(editor).getByLabelText('Level'),{target:{value:'5'}})
   fireEvent.change(within(editor).getByLabelText('Equipment'),{target:{value:'bands'}})
   fireEvent.change(within(editor).getByLabelText('Prescription'),{target:{value:'30 sec'}})
-  fireEvent.change(within(editor).getByLabelText('Timer (seconds)'),{target:{value:'5000'}})
+  fireEvent.change(within(editor).getByLabelText('Estimated duration (seconds)'),{target:{value:'5000'}})
   fireEvent.change(within(editor).getByLabelText('Video link (optional)'),{target:{value:' https://example.com/demo '}})
   fireEvent.click(within(editor).getByRole('button',{name:'Save exercise'}))
   expect(onSaveCustom).toHaveBeenCalledWith(expect.objectContaining({id:`m_custom_${Date.now()}`,name:'My custom press',category:'stretching',primaryMuscles:['shoulders'],pattern:'Shoulder_Reach_',level:5,equipment:['bands'],prescription:'30 sec',durationSeconds:3600,description:'Custom exercise.',videoUrl:'https://example.com/demo',isCustom:true}))

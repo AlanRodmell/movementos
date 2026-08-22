@@ -54,13 +54,13 @@ describe('state migration', () => {
 
   it('preserves plan adjustments, set labels and custom video links',()=>{
     const state=normaliseState({
-      savedWorkouts:[{id:'sets',name:'Sets',groups:[{heading:'Main work',items:[{id:'u1',reps:'5 reps 🩹',secs:20,adjusted:true,setNumber:2,totalSets:3}]}]}],
+      savedWorkouts:[{id:'sets',name:'Sets',groups:[{heading:'Main work',items:[{id:'u1',reps:'5 reps 🩹',secs:20,adjusted:true,difficultyLevel:2,swapHistory:['u2','u3'],setNumber:2,totalSets:3}]}]}],
       customExercises:{u_custom_video:{name:'Video move',reps:'10 reps',secs:30,detail:'Demo',tier:2,family:'custom',customBodyArea:'chest',videoUrl:'https://example.com/demo'}},
     })
-    expect(state.savedPlans[0].exercises[0]).toMatchObject({adjusted:true,setNumber:2,totalSets:3})
+    expect(state.savedPlans[0].exercises[0]).toMatchObject({adjusted:true,difficultyLevel:2,swapHistory:['u2','u3'],setNumber:2,totalSets:3})
     expect(state.customExercises[0].videoUrl).toBe('https://example.com/demo')
     const output=serializeLegacyState(state)
-    expect(output.savedWorkouts[0].groups[0].items[0]).toMatchObject({adjusted:true,setNumber:2,totalSets:3})
+    expect(output.savedWorkouts[0].groups[0].items[0]).toMatchObject({adjusted:true,difficultyLevel:2,swapHistory:['u2','u3'],setNumber:2,totalSets:3})
     expect(output.customExercises.u_custom_video.videoUrl).toBe('https://example.com/demo')
   })
 

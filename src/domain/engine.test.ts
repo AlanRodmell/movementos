@@ -308,6 +308,54 @@ describe('workout engine', () => {
     expect(swapped.exercises.map(item=>exerciseById.get(item.exerciseId)!).every(exercise=>exercise.equipment.includes('none')||exercise.equipment.every(item=>plan.equipment?.includes(item)))).toBe(true)
   })
 
+  it('rotates row swaps from the selected tier down without repeating options',()=>{
+    let plan=createManualWorkout(['u9'],defaultState)
+    const results: Array<{id:string;level:number}> = []
+    for(let count=0;count<6;count+=1){
+      plan=swapPlanExercise(plan,0,defaultState)
+      const exercise=exerciseById.get(plan.exercises[0].exerciseId)!
+      results.push({id:exercise.id,level:exercise.level})
+    }
+    expect(new Set(results.map(item=>item.id)).size).toBe(6)
+    expect(results.every(item=>item.level<=2)).toBe(true)
+    const firstLevelOne=results.findIndex(item=>item.level===1)
+    expect(firstLevelOne).toBeGreaterThan(0)
+    expect(results.slice(0,firstLevelOne).every(item=>item.level===2)).toBe(true)
+    expect(results.slice(firstLevelOne).every(item=>item.level===1)).toBe(true)
+  })
+
+  it('treats an easier selection as a lower swap difficulty filter',()=>{
+    let plan=scalePlanExercise(createManualWorkout(['u9'],defaultState),0,-1,defaultState)
+    expect(plan.exercises[0]).toMatchObject({difficultyLevel:1,scaled:'down'})
+    const ids=new Set([plan.exercises[0].exerciseId])
+    for(let count=0;count<3;count+=1){
+      plan=swapPlanExercise(plan,0,defaultState)
+      const exercise=exerciseById.get(plan.exercises[0].exerciseId)!
+      expect(exercise.level).toBe(1)
+      expect(plan.exercises[0].difficultyLevel).toBe(1)
+      ids.add(exercise.id)
+    }
+    expect(ids.size).toBeGreaterThanOrEqual(4)
+  })
+
+  it('includes Bodyweight Squats when rotating an L1 squat filter',()=>{
+    let plan=scalePlanExercise(createManualWorkout(['l30'],defaultState),0,-1,defaultState)
+    const ids=new Set([plan.exercises[0].exerciseId])
+    for(let count=0;count<3;count+=1){plan=swapPlanExercise(plan,0,defaultState);ids.add(plan.exercises[0].exerciseId)}
+    expect([...ids].every(id=>exerciseById.get(id)?.level===1)).toBe(true)
+    expect(ids).toContain('l1')
+  })
+
+  it('applies the selected difficulty ceiling consistently through higher tiers',()=>{
+    let plan=createManualWorkout(['l23'],defaultState)
+    expect(plan.exercises[0].difficultyLevel).toBe(3)
+    for(let count=0;count<6;count+=1){
+      plan=swapPlanExercise(plan,0,defaultState)
+      expect(exerciseById.get(plan.exercises[0].exerciseId)!.level).toBeLessThanOrEqual(3)
+      expect(plan.exercises[0].difficultyLevel).toBe(3)
+    }
+  })
+
   it('changes prescriptions materially by training goal',()=>{
     const strengthState={...defaultState,profile:{...defaultState.profile,goal:'strength' as const,equipment:['none' as const,'dumbbells' as const]}}
     const enduranceState={...strengthState,profile:{...strengthState.profile,goal:'endurance' as const}}

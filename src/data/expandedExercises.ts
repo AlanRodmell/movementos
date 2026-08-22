@@ -85,6 +85,10 @@ const rows: Row[] = [
   ['x080','Cable External Rotation','warmup','rotator_cuff',['cable'],['posterior_shoulder'],1,'10 each side',45,'Keep the elbow tucked and rotate the forearm outward slowly.'],
   ['x081','Dumbbell Scaption','warmup','shoulder_prep',['dumbbells'],['shoulders'],1,'10 reps',35,'Raise light weights slightly forward of the body with thumbs up.'],
   ['x082','Loaded Carry Warm-Up','warmup','carry',['dumbbells'],['full_body'],1,'30 sec',35,'Walk with light weights to organise posture, grip, and breathing.'],
+  ['x083','Prone W Pulls','upper','horizontal_pull',['none'],['upper_back','posterior_shoulder'],1,'10-15 reps',40,'Lie face down, draw the elbows into a W shape, and squeeze the shoulder blades without shrugging.'],
+  ['x084','Supine Elbow Rows','upper','horizontal_pull',['none'],['upper_back','biceps'],1,'8-12 reps',40,'Lie on your back with elbows planted, then drive them into the floor to lift the upper back.'],
+  ['x085','Prone Swimmer Pulls','upper','horizontal_pull',['none'],['upper_back','posterior_shoulder'],2,'8-12 reps',45,'Reach overhead while face down, then sweep the elbows toward the ribs with the chest lightly lifted.'],
+  ['x086','Floor Cobra Rows','upper','horizontal_pull',['none'],['upper_back','deep_core'],2,'8-12 reps',45,'Lift into a low floor cobra and pull the elbows toward the hips while keeping the neck long.'],
 ]
 
 const defaultGoals: Record<Category, Goal[]> = {

@@ -562,6 +562,8 @@ function planItem(exercise: Exercise, section: WorkoutExercise['section'], prefe
     section,
     scaled: null,
     originalLevel: exercise.level,
+    difficultyLevel: exercise.level,
+    swapHistory: [],
     setNumber,
     totalSets,
     slotLabel,
@@ -736,15 +738,23 @@ function compatiblePreferences(plan: WorkoutPlan, state: AppState): BuilderPrefe
   }
 }
 
+function variantsAtLevel(current: Exercise, level: number, state: AppState, equipment: Equipment[]) {
+  const eligible = allExercises(state).filter(exercise => exercise.level === level
+    && exercise.category === current.category
+    && equipmentMatches(exercise, equipment)
+    && !isFlareExcluded(exercise, state)
+    && !state.profile.avoidList.includes(exercise.id)
+    && (!exercise.optIn || state.profile.advancedBridges))
+  const sameRole = eligible.filter(exercise => movementRole(exercise) === movementRole(current))
+  const sameFamily = eligible.filter(exercise => programmingFamily(exercise) === programmingFamily(current))
+  const pool = sameRole.length ? sameRole : sameFamily.length ? sameFamily : eligible
+  return pool.sort((a,b) => Number(b.pattern === current.pattern) - Number(a.pattern === current.pattern))
+}
+
 export function findTierVariant(id: string, direction: -1 | 1, state: AppState, equipment = state.profile.equipment) {
   const current = resolveExercise(id, state)
   if (!current || current.level === 0 || current.isCustom) return null
-  return allExercises(state).filter(exercise => exercise.id !== id
-    && exercise.pattern === current.pattern
-    && exercise.level === current.level + direction
-    && equipmentMatches(exercise, equipment)
-    && !isFlareExcluded(exercise, state)
-    && !state.profile.avoidList.includes(exercise.id))[0] ?? null
+  return variantsAtLevel(current,current.level + direction,state,equipment).find(exercise=>exercise.id!==id) ?? null
 }
 
 function matchingOccurrences(plan: WorkoutPlan, index: number) {
@@ -757,10 +767,16 @@ export function scalePlanExercise(plan: WorkoutPlan, index: number, direction: -
   const item = plan.exercises[index]
   if (!item) return plan
   const current = resolveExercise(item.exerciseId, state)
-  const variant = findTierVariant(item.exerciseId, direction, state, plan.equipment ?? state.profile.equipment)
-  if (!current || !variant) return plan
+  if (!current || current.level === 0) return plan
+  const selectedDifficulty=Math.max(1,Math.min(5,item.difficultyLevel??item.originalLevel??current.level))
+  const nextDifficulty=Math.max(1,Math.min(5,selectedDifficulty+direction))
+  if(nextDifficulty===selectedDifficulty)return plan
+  const variant = current.level===nextDifficulty
+    ? current
+    : variantsAtLevel(current,nextDifficulty,state,plan.equipment??state.profile.equipment).find(exercise=>exercise.id!==current.id)
+  if (!variant) return plan
   const originalLevel = item.originalLevel ?? current.level
-  const scaled = variant.level > originalLevel ? 'up' as const : variant.level < originalLevel ? 'down' as const : null
+  const scaled = nextDifficulty > originalLevel ? 'up' as const : nextDifficulty < originalLevel ? 'down' as const : null
   const adjustment = plannedPrescription(variant, plan.intention, plan.goal, state)
   const occurrences = matchingOccurrences(plan, index)
   const exercises = plan.exercises.map((entry, itemIndex) => occurrences.has(itemIndex) ? {
@@ -768,8 +784,10 @@ export function scalePlanExercise(plan: WorkoutPlan, index: number, direction: -
     exerciseId: variant.id,
     ...adjustment,
     originalLevel,
+    difficultyLevel:nextDifficulty,
+    swapHistory:[],
     scaled,
-    rationale: `${scaled === 'up' ? 'Manually progressed above the original tier.' : scaled === 'down' ? 'Manually regressed below the original tier.' : 'Returned to the original tier.'}${adjustment.adjusted ? ' Recovery adjustment retained.' : ''}`,
+    rationale: `${scaled === 'up' ? 'Difficulty filter raised above the original tier.' : scaled === 'down' ? 'Difficulty filter lowered below the original tier.' : 'Returned to the original difficulty filter.'}${adjustment.adjusted ? ' Recovery adjustment retained.' : ''}`,
   } : entry)
   return { ...plan, exercises }
 }
@@ -891,37 +909,60 @@ export function reorderPlanExercise(plan: WorkoutPlan, fromIndex: number, toInde
   return { ...plan, exercises }
 }
 
-function replacementFor(plan: WorkoutPlan, index: number, state: AppState) {
+function replacementChoices(plan: WorkoutPlan, index: number, state: AppState) {
   const currentItem = plan.exercises[index]
   const current = currentItem ? resolveExercise(currentItem.exerciseId, state) : null
-  if (!current) return null
+  if (!currentItem||!current) return []
   const preferences = compatiblePreferences(plan, state)
-  const used = new Set(plan.exercises.map(item => item.exerciseId))
-  const base = allExercises(state).filter(exercise => exercise.id !== current.id
-    && !used.has(exercise.id)
+  const occurrences=matchingOccurrences(plan,index)
+  const used = new Set(plan.exercises.filter((_,itemIndex)=>!occurrences.has(itemIndex)).map(item => item.exerciseId))
+  const difficultyLevel=Math.max(1,Math.min(5,currentItem.difficultyLevel??currentItem.originalLevel??(current.level||1)))
+  const base = allExercises(state).filter(exercise => !used.has(exercise.id)
     && exercise.category === current.category
+    && exercise.level>0
+    && exercise.level<=difficultyLevel
     && isEligible(exercise, preferences, state, [current.category]))
+  const sameRole = base.filter(exercise=>movementRole(exercise)===movementRole(current))
   const sameFamily = base.filter(exercise => programmingFamily(exercise) === programmingFamily(current))
-  const samePattern = sameFamily.filter(exercise => exercise.pattern === current.pattern)
-  const pool = samePattern.length ? samePattern : sameFamily.length ? sameFamily : base
-  const candidates = tierCandidates(pool, state, preferences)
+  const hasAlternative=(exercises:Exercise[])=>exercises.some(exercise=>exercise.id!==current.id)
+  const pool = hasAlternative(sameRole) ? sameRole : hasAlternative(sameFamily) ? sameFamily : base
   const context = selectionContext(state, used)
-  return candidates.sort((a, b) => candidateScore(b, preferences, state, `${plan.id}:replacement:${index}`, context) - candidateScore(a, preferences, state, `${plan.id}:replacement:${index}`, context))[0] ?? null
+  return pool.sort((a,b)=>b.level-a.level
+    || Number(b.pattern===current.pattern)-Number(a.pattern===current.pattern)
+    || candidateScore(b,preferences,state,`${plan.id}:replacement:${index}`,context)-candidateScore(a,preferences,state,`${plan.id}:replacement:${index}`,context)
+    || a.name.localeCompare(b.name))
+}
+
+function replacementFor(plan: WorkoutPlan, index: number, state: AppState) {
+  const currentItem=plan.exercises[index]
+  if(!currentItem)return null
+  const choices=replacementChoices(plan,index,state)
+  const choiceIds=new Set(choices.map(exercise=>exercise.id))
+  const visited=(currentItem.swapHistory??[]).filter(id=>choiceIds.has(id))
+  const unvisited=choices.filter(exercise=>exercise.id!==currentItem.exerciseId&&!visited.includes(exercise.id))
+  const remaining=choices.filter(exercise=>exercise.id!==currentItem.exerciseId)
+  const replacement=unvisited[0]??remaining[0]
+  if(!replacement)return null
+  const swapHistory=unvisited.length?[...new Set([...visited,currentItem.exerciseId])]:[currentItem.exerciseId]
+  const current=resolveExercise(currentItem.exerciseId,state)
+  const difficultyLevel=Math.max(1,Math.min(5,currentItem.difficultyLevel??currentItem.originalLevel??current?.level??1))
+  return{replacement,swapHistory,difficultyLevel}
 }
 
 export function swapPlanExercise(plan: WorkoutPlan, index: number, state: AppState) {
   const current = plan.exercises[index]
-  const replacement = replacementFor(plan, index, state)
-  if (!current || !replacement) return plan
+  const choice = replacementFor(plan, index, state)
+  if (!current || !choice) return plan
+  const {replacement,swapHistory,difficultyLevel}=choice
   const adjustment = plannedPrescription(replacement, plan.intention, plan.goal, state)
   const occurrences = matchingOccurrences(plan, index)
   const exercises = plan.exercises.map((item, itemIndex) => occurrences.has(itemIndex) ? {
     ...item,
     exerciseId: replacement.id,
     ...adjustment,
-    rationale: `Swapped consistently across every set for a compatible ${programmingFamily(replacement).replaceAll('_', ' ')} movement.`,
-    scaled: null,
-    originalLevel: replacement.level,
+    rationale: `Swapped consistently across every set within the selected L${difficultyLevel} difficulty filter.`,
+    difficultyLevel,
+    swapHistory,
   } : item)
   return { ...plan, exercises, durationMinutes: estimatedPlanMinutes(exercises) }
 }
@@ -929,9 +970,8 @@ export function swapPlanExercise(plan: WorkoutPlan, index: number, state: AppSta
 export function avoidPlanExercise(plan: WorkoutPlan, index: number, state: AppState) {
   const current = plan.exercises[index]
   if (!current) return plan
-  const replacement = replacementFor(plan, index, state)
-  if (!replacement) return removePlanExercise(plan, index)
-  return swapPlanExercise(plan, index, state)
+  const swapped=swapPlanExercise(plan,index,state)
+  return swapped===plan?removePlanExercise(plan,index):swapped
 }
 
 export function applySessionCompletion(state: AppState, session: WorkoutSession): AppState {

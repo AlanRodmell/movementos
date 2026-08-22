@@ -122,7 +122,10 @@ function planFromUnknown(value: unknown, fallbackId = 'plan_import'): WorkoutPla
     const heading = safeText(entry.section, 'Main work', 30)
     const section: WorkoutExercise['section'] = heading === 'Prepare' || heading === 'Condition' || heading === 'Restore' ? heading : 'Main work'
     const scaled:WorkoutExercise['scaled']=entry.scaled==='up'||entry.scaled==='down'?entry.scaled:null
-    return { exerciseId: safeText(entry.exerciseId ?? entry.id, '', 100), prescription: safeText(entry.prescription ?? entry.reps, '', 80), durationSeconds: Math.max(1, Math.min(3600, Number(entry.durationSeconds ?? entry.secs) || 30)), rationale: safeText(entry.rationale, 'Saved exercise', 200), section, adjusted:Boolean(entry.adjusted), scaled, originalLevel:Number(entry.originalLevel??entry.originalTier)||0, setNumber:Number(entry.setNumber)||undefined, totalSets:Number(entry.totalSets)||undefined,slotKey:safeText(entry.slotKey,'',80)||undefined,slotLabel:safeText(entry.slotLabel,'',120)||undefined }
+    const originalLevel=Math.max(0,Math.min(5,Number(entry.originalLevel??entry.originalTier)||0))
+    const storedDifficulty=Number(entry.difficultyLevel)
+    const difficultyLevel=storedDifficulty>=1?Math.max(1,Math.min(5,storedDifficulty)):originalLevel||undefined
+    return { exerciseId: safeText(entry.exerciseId ?? entry.id, '', 100), prescription: safeText(entry.prescription ?? entry.reps, '', 80), durationSeconds: Math.max(1, Math.min(3600, Number(entry.durationSeconds ?? entry.secs) || 30)), rationale: safeText(entry.rationale, 'Saved exercise', 200), section, adjusted:Boolean(entry.adjusted), scaled, originalLevel, difficultyLevel, swapHistory:safeIds(entry.swapHistory).slice(0,50), setNumber:Number(entry.setNumber)||undefined, totalSets:Number(entry.totalSets)||undefined,slotKey:safeText(entry.slotKey,'',80)||undefined,slotLabel:safeText(entry.slotLabel,'',120)||undefined }
   }).filter(item => item.exerciseId)
   if (!exercises.length) return null
   return {
@@ -185,7 +188,7 @@ export function normaliseState(value: unknown): AppState {
 function legacyGroups(plan: WorkoutPlan) {
   return ['Prepare','Main work','Condition','Restore'].map(heading => ({
     heading,
-    items: plan.exercises.filter(item => item.section === heading).map((item,index) => ({ id:item.exerciseId, reps:item.prescription, secs:item.durationSeconds, adjusted:Boolean(item.adjusted), scaled:item.scaled??null, originalTier:item.originalLevel??0, setNumber:item.setNumber, totalSets:item.totalSets, slotKey:item.slotKey, slotLabel:item.slotLabel, ukey:`${item.exerciseId}_${index}` })),
+    items: plan.exercises.filter(item => item.section === heading).map((item,index) => ({ id:item.exerciseId, reps:item.prescription, secs:item.durationSeconds, adjusted:Boolean(item.adjusted), scaled:item.scaled??null, originalTier:item.originalLevel??0, difficultyLevel:item.difficultyLevel??item.originalLevel??0, swapHistory:item.swapHistory??[], setNumber:item.setNumber, totalSets:item.totalSets, slotKey:item.slotKey, slotLabel:item.slotLabel, ukey:`${item.exerciseId}_${index}` })),
   })).filter(group => group.items.length)
 }
 

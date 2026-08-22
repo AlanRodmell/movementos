@@ -88,6 +88,8 @@ export interface WorkoutExercise {
   adjusted?: boolean
   scaled?: 'up' | 'down' | null
   originalLevel?: number
+  difficultyLevel?: number
+  swapHistory?: string[]
   setNumber?: number
   totalSets?: number
   slotKey?: string

@@ -350,6 +350,9 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
 .timer { margin:22px 0 6px; font:800 clamp(5.8rem,26vw,9.5rem)/1 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; letter-spacing:-.08em; color:white; }
 .timer.complete { color:#9bcbff; }
 .player-prescription { color:#9bcbff; text-transform:uppercase; letter-spacing:.08em; }
+.player-rep-target { display:grid; gap:8px; margin:22px 0 6px; padding:18px 28px; border:1px solid rgba(143,195,255,.32); border-radius:20px; background:rgba(4,29,67,.38); }
+.player-rep-target small { margin:0; color:#8fc3ff; font-size:.68rem; font-weight:850; letter-spacing:.13em; }
+.player-rep-target strong { color:white; font-size:clamp(2.5rem,11vw,5.5rem); line-height:1; letter-spacing:-.04em; }
 .player-centre small { margin-top:12px; color:#a9c5e5; }
 .player-rationale { display:grid; gap:3px; max-width:520px; margin:12px 0 0; padding-left:18px; color:#a9c5e5; font-size:.75rem; line-height:1.4; text-align:left; }
 .player-modify-trigger { display:flex; align-items:center; gap:9px; min-height:42px; margin-top:16px; padding:0 10px; border:0; border-radius:10px; background:transparent; color:#b9d8fa; font-size:.76rem; font-weight:800; }

@@ -1,4 +1,4 @@
-import { act,fireEvent,render,screen } from '@testing-library/react'
+import { fireEvent,render,screen } from '@testing-library/react'
 import App from './App'
 import { defaultState, serializeLegacyState, STORAGE_KEY } from './storage/state'
 import type { ActiveSession, WorkoutPlan } from './domain/types'
@@ -56,7 +56,9 @@ it('resumes a persisted session, records review data, and transitions into Progr
   render(<App/>)
   fireEvent.click(screen.getByRole('button',{name:/Resume/}))
   expect(screen.queryByRole('navigation',{name:'Primary navigation'})).not.toBeInTheDocument()
-  act(()=>vi.advanceTimersByTime(1000))
+  expect(screen.getByText('8 reps')).toBeInTheDocument()
+  expect(screen.queryByText('0:01')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button',{name:/Complete session/}))
   expect(screen.getByRole('heading',{name:'How did each movement fit?'})).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button',{name:'Good fit'}))
   fireEvent.click(screen.getByText('Record achieved reps, time or load'))

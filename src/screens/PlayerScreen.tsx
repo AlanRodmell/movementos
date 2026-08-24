@@ -26,6 +26,9 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   const initialPhaseHasTimer=phaseHasTimer(initialPhase,initialItem)
   const initialRunning=session.running&&initialPhaseHasTimer
   const [plan,setPlan]=useState(session.plan)
+  const planEffort=plan.intention==='train'?(plan.trainingEffort??'standard'):'standard'
+  const playerClass=`player-screen effort-${planEffort}`
+  const effortLabel=plan.intention==='recover'?'RECOVERY':planEffort==='easy'?'TAKE IT EASY':planEffort==='push'?'PUSH IT':'STANDARD'
   const [index,setIndex]=useState(session.index)
   const [phase,setPhase]=useState<ActiveSession['phase']>(initialPhase)
   const initialRemaining=initialPhaseHasTimer?(initialRunning&&session.deadlineAt?Math.max(0,Math.ceil((session.deadlineAt-Date.now())/1000)):session.remainingSeconds):0
@@ -154,12 +157,12 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   const updateIssueDraft=(id:string,update:Partial<IssueDraft>)=>setIssueDrafts(values=>({...values,[id]:{...(values[id]??{area:issueOptions(id)[0]??'full_body',severity:'mild',side:'bilateral'}),...update}}))
   const finish=(rating:WorkoutSession['rating'])=>onComplete({
     id:`session_${Date.now()}`,planName:plan.name,date:new Date().toISOString(),durationSeconds:Math.max(1,Math.round((Date.now()-session.startedAt)/1000)),intention:plan.intention,goal:plan.goal,rating,
-    completedExerciseIds:completed,exercises:reviewRows(),focus:plan.focusAreas,areaLoadBefore,actions,balanceReport:plan.balanceReport,
+    trainingEffort:plan.intention==='train'?planEffort:undefined,completedExerciseIds:completed,exercises:reviewRows(),focus:plan.focusAreas,areaLoadBefore,actions,balanceReport:plan.balanceReport,
     planStructure:{targetDurationMinutes:plan.targetDurationMinutes??plan.durationMinutes,mainExerciseCount:new Set(plan.exercises.filter(item=>item.section==='Main work').map(item=>item.exerciseId)).size,totalSets:Math.max(0,...plan.exercises.filter(item=>item.section==='Main work').map(item=>item.totalSets??1)),includeWarmup:plan.exercises.some(item=>item.section==='Prepare'),includeConditioning:plan.exercises.some(item=>item.section==='Condition')},
   })
   const exitButton=<button className="player-exit" onClick={()=>confirm('End this session without saving?')&&onExit()}>← End session</button>
 
-  if(finished&&!ratingStage)return <div className="player-screen workout-review">
+  if(finished&&!ratingStage)return <div className={`${playerClass} workout-review`}>
     <span className="eyebrow">SESSION REVIEW</span><h1>How did each movement fit?</h1><p>Optional feedback helps tune future sessions. Repeated sets are grouped together.</p>
     <div className="review-list">{reviewRows().map(row=>{
       const draft=issueDrafts[row.id]??{area:issueOptions(row.id)[0]??'full_body',severity:'mild' as const,side:'bilateral' as const}
@@ -171,15 +174,15 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
       </section>
     })}</div><button className="primary review-continue" onClick={()=>setRatingStage(true)}>Continue to overall rating <span>→</span></button>
   </div>
-  if(finished&&ratingStage)return <div className="player-screen finish-screen"><span className="finish-symbol">✓</span><span className="eyebrow">SESSION COMPLETE</span><h1>{completed.length} of {plan.exercises.length} movements</h1><p>How did today’s session feel overall?</p><div className="rating-grid">{(['easy','good','hard','brutal'] as const).map(rating=><button key={rating} onClick={()=>finish(rating)}><span>{rating==='easy'?'○':rating==='good'?'●':rating==='hard'?'▲':'◆'}</span>{rating}</button>)}</div><button className="text-button" onClick={()=>finish('unrated')}>Finish without overall rating</button></div>
+  if(finished&&ratingStage)return <div className={`${playerClass} finish-screen`}><span className="finish-symbol">✓</span><span className="eyebrow">SESSION COMPLETE</span><h1>{completed.length} of {plan.exercises.length} movements</h1><p>How did today’s session feel overall?</p><div className="rating-grid">{(['easy','good','hard','brutal'] as const).map(rating=><button key={rating} onClick={()=>finish(rating)}><span>{rating==='easy'?'○':rating==='good'?'●':rating==='hard'?'▲':'◆'}</span>{rating}</button>)}</div><button className="text-button" onClick={()=>finish('unrated')}>Finish without overall rating</button></div>
   if(!current||!exercise)return null
 
-  if(phase==='get_ready')return <div className="player-screen player-phase-screen" onPointerDownCapture={()=>soundEnabled&&unlockWorkoutAudio()}><section className="player-phase-card"><span className="phase-symbol">⏳</span><span className="eyebrow">GET READY</span><h1>Workout begins in</h1><div className="timer">{remaining}</div><p>First up: <strong>{exercise.name}</strong></p></section>{exitButton}</div>
+  if(phase==='get_ready')return <div className={`${playerClass} player-phase-screen`} onPointerDownCapture={()=>soundEnabled&&unlockWorkoutAudio()}><section className="player-phase-card"><span className="phase-symbol">⏳</span><span className="eyebrow">GET READY · {effortLabel}</span><h1>Workout begins in</h1><div className="timer">{remaining}</div><p>First up: <strong>{exercise.name}</strong></p></section>{exitButton}</div>
 
-  if(phase==='waiting')return <div className="player-screen player-phase-screen"><section className="player-phase-card"><span className="phase-symbol">✓</span><span className="eyebrow">MOVEMENT COMPLETE</span><h1>Nice work</h1><p>Take your time. Log the movement when you’re ready to continue.</p><div className="player-next-card"><small>UP NEXT</small><strong>{nextExercise?`${restDuration} sec rest, then ${nextExercise.name}`:'Session complete'}</strong></div></section><div className="player-actions"><button className="primary" onClick={()=>startPhase('rest',restDuration,true)}>Log &amp; continue <span>→</span></button>{exitButton}</div></div>
+  if(phase==='waiting')return <div className={`${playerClass} player-phase-screen`}><section className="player-phase-card"><span className="phase-symbol">✓</span><span className="eyebrow">MOVEMENT COMPLETE</span><h1>Nice work</h1><p>Take your time. Log the movement when you’re ready to continue.</p><div className="player-next-card"><small>UP NEXT</small><strong>{nextExercise?`${restDuration} sec rest, then ${nextExercise.name}`:'Session complete'}</strong></div></section><div className="player-actions"><button className="primary" onClick={()=>startPhase('rest',restDuration,true)}>Log &amp; continue <span>→</span></button>{exitButton}</div></div>
 
   const progress=((index+1)/plan.exercises.length)*100
-  if(phase==='rest')return <div className="player-screen"><div className="player-top"><span>REST</span><strong>{index+1} / {plan.exercises.length}</strong></div><div className="player-progress"><i style={{width:`${progress}%`}}/></div><section className="player-centre rest-phase"><span className="eyebrow">REST BLOCK</span><h1>Recover</h1><div className="timer">{formatTime(remaining)}</div><div className="player-next-card"><small>STARTS AUTOMATICALLY</small><strong>{nextExercise?.name??'Session complete'}</strong></div></section><div className="player-actions"><button className="primary" onClick={skip}>Skip rest <span>→</span></button><div><button className="secondary" onClick={pause}>{running?'Pause rest':'Resume rest'}</button></div>{exitButton}</div></div>
+  if(phase==='rest')return <div className={playerClass}><div className="player-top"><span>REST</span><span className="player-effort-pill">{effortLabel}</span><strong>{index+1} / {plan.exercises.length}</strong></div><div className="player-progress"><i style={{width:`${progress}%`}}/></div><section className="player-centre rest-phase"><span className="eyebrow">REST BLOCK</span><h1>Recover</h1><div className="timer">{formatTime(remaining)}</div><div className="player-next-card"><small>STARTS AUTOMATICALLY</small><strong>{nextExercise?.name??'Session complete'}</strong></div></section><div className="player-actions"><button className="primary" onClick={skip}>Skip rest <span>→</span></button><div><button className="secondary" onClick={pause}>{running?'Pause rest':'Resume rest'}</button></div>{exitButton}</div></div>
 
   const changePlan=(next:typeof plan)=>{setPlan(next);const changed=next.exercises[index];setRemaining(isTimedPrescription(changed.prescription)?workSeconds(changed):0);setRunning(false);deadline.current=0}
   const changeDifficulty=(direction:-1|1)=>{
@@ -208,9 +211,9 @@ export function PlayerScreen({ session, state, customExercises, soundEnabled, wa
   }
   const openModify=()=>{pauseForSecondaryAction();setChangeNotice('');setModifyOpen(true)}
   const timedExercise=isTimedPrescription(current.prescription)
-  return <div className={`player-screen ${isPersonalised?'player-personalised':''}`} onPointerDownCapture={()=>soundEnabled&&unlockWorkoutAudio()}>
+  return <div className={`${playerClass} ${isPersonalised?'player-personalised':''}`} onPointerDownCapture={()=>soundEnabled&&unlockWorkoutAudio()}>
     {isPersonalised&&<div className="player-adaptive-banner"><span aria-hidden="true">✦</span><div><strong>{current.adjusted?'PERSONALISED FOR TODAY':'ADJUSTED BY YOU'}</strong><small>{adjustmentContext}</small></div></div>}
-    <div className="player-top"><span>{current.section}{current.setNumber?` · Set ${current.setNumber}/${current.totalSets}`:''}</span><strong>{index+1} / {plan.exercises.length}</strong></div>
+    <div className="player-top"><span>{current.section}{current.setNumber?` · Set ${current.setNumber}/${current.totalSets}`:''}</span><span className="player-effort-pill">{effortLabel}</span><strong>{index+1} / {plan.exercises.length}</strong></div>
     <div className="player-progress"><i style={{width:`${progress}%`}}/></div>
     <section className={`player-centre player-exercise-centre ${isPersonalised?'player-centre-personalised':''} ${current.scaled==='down'?'easier-adjusted':current.scaled==='up'?'harder-adjusted':''}`}>
       {phase==='switch_sides'&&<span className="eyebrow">SIDE 2</span>}

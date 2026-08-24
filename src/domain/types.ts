@@ -1,4 +1,5 @@
 export type Intention = 'train' | 'recover'
+export type TrainingEffort = 'easy' | 'standard' | 'push'
 export type Goal = 'general' | 'strength' | 'muscle' | 'endurance' | 'mobility'
 export type Level = 1 | 2 | 3 | 4 | 5
 export type Equipment =
@@ -122,6 +123,7 @@ export interface WorkoutPlan {
   exercises: WorkoutExercise[]
   insights: string[]
   focusAreas: MuscleArea[]
+  trainingEffort?: TrainingEffort
   balanceReport?: BalanceReport
 }
 
@@ -181,6 +183,7 @@ export interface WorkoutSession {
   actions?: WorkoutAction[]
   balanceReport?: BalanceReport
   planStructure?: PlanStructure
+  trainingEffort?: TrainingEffort
 }
 
 export interface PlanStructure {
@@ -341,10 +344,12 @@ export interface BuilderPreferences {
   exercisesPerRound: number | 'auto'
   targetSets: number | 'auto'
   recoveryModes: RecoveryMode[]
+  trainingEffort?: TrainingEffort
 }
 
 export interface AppState {
   schemaVersion: number
+  trainingEffort: TrainingEffort
   profile: Profile
   issues: Issue[]
   history: WorkoutSession[]

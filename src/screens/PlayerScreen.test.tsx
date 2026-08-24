@@ -24,6 +24,18 @@ it('derives work timers only from explicit time prescriptions',()=>{
   expect(timedPrescriptionSeconds('0.5 min')).toBe(30)
 })
 
+it('keeps the plan effort snapshot visible and themed during training',()=>{
+  const plan:WorkoutPlan={
+    id:'push-player',name:'Push player',intention:'train',goal:'general',trainingEffort:'push',durationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['full_body'],insights:[],
+    exercises:[{exerciseId:'x001',prescription:'13-15 reps',durationSeconds:55,rationale:'Push dose',section:'Main work'}],
+  }
+  const session:ActiveSession={plan,index:0,phase:'work',remainingSeconds:0,running:false,deadlineAt:null,startedAt:Date.now(),completedExerciseIds:[]}
+  const {container}=render(<PlayerScreen session={session} state={defaultState} customExercises={[]} soundEnabled={false} waitBetweenExercises={false} areaLoadBefore={{}} onProgress={vi.fn()} onComplete={vi.fn()} onExit={vi.fn()}/>)
+
+  expect(screen.getByText('PUSH IT')).toBeInTheDocument()
+  expect(container.querySelector('.player-screen')).toHaveClass('effort-push')
+})
+
 it('runs get-ready, work, waiting, rest, and the next exercise automatically',()=>{
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-08-16T10:00:00Z'))

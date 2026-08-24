@@ -33,20 +33,21 @@ p { color:var(--muted); line-height:1.55; }
 .hero-card h1 { max-width:580px; }
 .hero-card p { color:var(--accent-muted); max-width:580px; }
 .hero-card .eyebrow { color:var(--accent-light); }
-.training-effort-control { position:relative; z-index:1; display:grid; gap:10px; margin-top:22px; padding:14px; border:1px solid rgba(255,255,255,.2); border-radius:19px; background:rgba(0,0,0,.13); }
+.training-effort-control { --effort-slider-tone:#77aff2; position:relative; z-index:1; display:grid; gap:5px; max-width:580px; margin-top:22px; padding:13px 16px 11px; border:1px solid rgba(255,255,255,.2); border-radius:17px; background:rgba(0,0,0,.13); }
+.training-effort-control.effort-easy { --effort-slider-tone:#62c48b; }
+.training-effort-control.effort-push { --effort-slider-tone:#ef707b; }
 .training-effort-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.training-effort-heading strong { font-size:.8rem; }
-.training-effort-heading small { color:var(--accent-muted); font-size:.65rem; font-weight:700; }
-.effort-segments { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
-.effort-segments button { min-width:0; min-height:76px; display:grid; grid-template-columns:26px 1fr; grid-template-rows:auto auto; gap:2px 8px; align-content:center; padding:9px 10px; border:1px solid rgba(255,255,255,.2); border-radius:13px; background:rgba(255,255,255,.08); color:white; text-align:left; }
-.effort-segments button > span { grid-row:1/3; width:26px; height:26px; display:grid; place-items:center; align-self:center; border-radius:9px; background:rgba(255,255,255,.15); font-weight:900; }
-.effort-segments button strong { font-size:.72rem; }
-.effort-segments button small { color:var(--accent-muted); font-size:.57rem; line-height:1.25; }
-.effort-segments button.selected { border-color:white; background:white; color:#172b46; box-shadow:0 6px 18px rgba(0,0,0,.18); }
-.effort-segments button.selected small { color:#5f6873; }
-.effort-segments button.effort-easy.selected > span { background:#dff2e7; color:#147445; }
-.effort-segments button.effort-standard.selected > span { background:#dcecff; color:#0752b5; }
-.effort-segments button.effort-push.selected > span { background:#f9dfe2; color:#b82734; }
+.training-effort-heading label { font-size:.8rem; font-weight:850; }
+.training-effort-heading strong { color:white; font-size:.72rem; }
+.training-effort-control .effort-slider { width:100%; height:24px; margin:1px 0 0; padding:0; appearance:none; -webkit-appearance:none; background:transparent; cursor:pointer; }
+.effort-slider::-webkit-slider-runnable-track { height:7px; border:1px solid rgba(255,255,255,.3); border-radius:999px; background:linear-gradient(90deg,#58bd82 0 31%,#72aef5 35% 65%,#e9616d 69% 100%); }
+.effort-slider::-moz-range-track { height:7px; border:1px solid rgba(255,255,255,.3); border-radius:999px; background:linear-gradient(90deg,#58bd82 0 31%,#72aef5 35% 65%,#e9616d 69% 100%); }
+.effort-slider::-webkit-slider-thumb { width:22px; height:22px; margin-top:-8px; appearance:none; -webkit-appearance:none; border:4px solid var(--effort-slider-tone); border-radius:50%; background:white; box-shadow:0 3px 10px rgba(0,0,0,.32); }
+.effort-slider::-moz-range-thumb { width:14px; height:14px; border:4px solid var(--effort-slider-tone); border-radius:50%; background:white; box-shadow:0 3px 10px rgba(0,0,0,.32); }
+.effort-slider-labels { display:grid; grid-template-columns:repeat(3,1fr); color:var(--accent-muted); font-size:.57rem; font-weight:800; }
+.effort-slider-labels span:nth-child(2) { text-align:center; }
+.effort-slider-labels span:last-child { text-align:right; }
+.effort-summary { margin-top:3px; padding-top:7px; border-top:1px solid rgba(255,255,255,.15); color:var(--accent-muted); font-size:.61rem; line-height:1.35; }
 .hero-actions { display:flex; gap:12px; position:relative; z-index:1; margin-top:24px; }
 .hero-actions .primary { flex:1; }
 .hero-actions .secondary { color:white; border-color:var(--accent-light); background:transparent; }
@@ -499,11 +500,8 @@ input[type=range] { width:100%; accent-color:var(--forest); margin:18px 0 30px; 
   .app-main { padding:18px 13px 160px; }
   .hero-card { padding:28px 22px; }
   .hero-actions { flex-direction:column; }
-  .training-effort-heading { align-items:flex-start; flex-direction:column; gap:3px; }
-  .effort-segments { gap:5px; }
-  .effort-segments button { min-height:58px; grid-template-columns:22px 1fr; padding:7px 6px; gap:5px; }
-  .effort-segments button > span { width:22px; height:22px; border-radius:7px; }
-  .effort-segments button small { display:none; }
+  .training-effort-control { padding-inline:13px; }
+  .effort-slider-labels { font-size:.54rem; }
   .resume-card { align-items:stretch; flex-direction:column; }
   .stats-grid { gap:7px; }
   .stat-tile { padding:14px 10px; border-radius:16px; }

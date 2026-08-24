@@ -1,4 +1,4 @@
-import { fireEvent,render,screen } from '@testing-library/react'
+import { act,fireEvent,render,screen } from '@testing-library/react'
 import App from './App'
 import { defaultState, serializeLegacyState, STORAGE_KEY } from './storage/state'
 import type { ActiveSession, WorkoutPlan } from './domain/types'
@@ -14,12 +14,34 @@ function submitDefaultBuilder() {
 it('persists Push It and snapshots it onto the next training plan',()=>{
   render(<App/>)
 
-  fireEvent.click(screen.getByRole('button',{name:/Push it/}))
+  fireEvent.change(screen.getByRole('slider',{name:'Training effort'}),{target:{value:'2'}})
   expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).trainingEffort).toBe('push')
+  expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).trainingEffortDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   expect(document.querySelector('.app-shell')).toHaveClass('effort-push')
   fireEvent.click(screen.getByRole('button',{name:/Upper body/}))
   expect(screen.getByText('Training effort · Push it')).toBeInTheDocument()
   expect(document.querySelector('.plan-screen')).toHaveClass('effort-push')
+})
+
+it('resets a previous-day training effort to Standard',()=>{
+  vi.useFakeTimers();vi.setSystemTime(new Date(2026,7,24,9))
+  localStorage.setItem(STORAGE_KEY,JSON.stringify({...serializeLegacyState(defaultState),trainingEffort:'push',trainingEffortDate:'2026-08-23'}))
+  render(<App/>)
+
+  expect(screen.getByRole('slider',{name:'Training effort'})).toHaveValue('1')
+  expect(document.querySelector('.app-shell')).toHaveClass('effort-standard')
+  expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).trainingEffort).toBe('standard')
+})
+
+it('resets training effort at local midnight while the app remains open',()=>{
+  vi.useFakeTimers();vi.setSystemTime(new Date(2026,7,24,23,59,59))
+  localStorage.setItem(STORAGE_KEY,JSON.stringify({...serializeLegacyState(defaultState),trainingEffort:'easy',trainingEffortDate:'2026-08-24'}))
+  render(<App/>)
+
+  expect(screen.getByRole('slider',{name:'Training effort'})).toHaveValue('0')
+  act(()=>vi.advanceTimersByTime(1100))
+  expect(screen.getByRole('slider',{name:'Training effort'})).toHaveValue('1')
+  expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).trainingEffort).toBe('standard')
 })
 
 it('builds a fresh routine on each builder submission and exposes one start action',()=>{

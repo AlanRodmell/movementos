@@ -11,6 +11,7 @@ import type {
   Intention,
   MuscleArea,
   MovementRole,
+  TrainingEffort,
   WorkoutExercise,
   WorkoutPlan,
   WorkoutSession,
@@ -274,12 +275,19 @@ function isFlareExcluded(exercise: Exercise, state: AppState) {
   return activeIssueAreas(state, 'flare').some(area => exerciseMatchesArea(exercise, area) || exercise.contraindications.includes(area))
 }
 
+const effortMultiplier: Record<TrainingEffort, number> = { easy:.75, standard:1, push:1.25 }
+const trainingEffortFor = (preferences: Pick<BuilderPreferences,'intention'|'trainingEffort'>, state: AppState):TrainingEffort => preferences.intention === 'train' ? (preferences.trainingEffort ?? state.trainingEffort) : 'standard'
+const exerciseMatchesAnyArea = (exercise:Exercise, areas:MuscleArea[]) => areas.some(area => exerciseMatchesArea(exercise, area) || exercise.contraindications.includes(area))
+const isPushTroubleAreaExcluded = (exercise:Exercise, preferences:Pick<BuilderPreferences,'intention'|'trainingEffort'>, state:AppState) => trainingEffortFor(preferences,state) === 'push'
+  && exerciseMatchesAnyArea(exercise,[...activeIssueAreas(state),...checkInAreas(state)])
+
 function isEligible(exercise: Exercise, preferences: BuilderPreferences, state: AppState, categories?: Category[]) {
   return (!categories || categories.includes(exercise.category))
     && equipmentMatches(exercise, preferences.equipment)
     && !state.profile.avoidList.includes(exercise.id)
     && (!exercise.optIn || state.profile.advancedBridges)
     && !isFlareExcluded(exercise, state)
+    && !isPushTroubleAreaExcluded(exercise, preferences, state)
 }
 
 function scaleNumbers(value: string, multiplier: number) {
@@ -304,7 +312,18 @@ function goalPrescription(exercise: Exercise, goal: Goal) {
   }
 }
 
-function plannedPrescription(exercise: Exercise, intention: Intention, goal: Goal, state: AppState) {
+function scaleTrainingDose(value:string,multiplier:number) {
+  const dosePattern=/\b(\d+(?:\.\d+)?)(\s*[-–]\s*(\d+(?:\.\d+)?))?(\s*(?:reps?|seconds?|secs?|minutes?|mins?|each|breaths?)\b)/gi
+  const scale=(raw:string,unit:string)=>{
+    const original=Number(raw)
+    if(/sec/i.test(unit))return String(Math.max(5,Math.round(original*multiplier/5)*5))
+    if(/min/i.test(unit)){const adjusted=Math.max(.5,Math.round(original*multiplier*2)/2);return Number.isInteger(adjusted)?String(adjusted):adjusted.toFixed(1)}
+    return String(Math.max(1,Math.round(original*multiplier)))
+  }
+  return value.replace(dosePattern,(_,start,range,end,unit)=>`${scale(start,unit)}${range?range.replace(end,scale(end,unit)):''}${unit}`)
+}
+
+function plannedPrescription(exercise: Exercise, intention: Intention, goal: Goal, state: AppState, trainingEffort:TrainingEffort = state.trainingEffort) {
   const learnedPrescription=state.learningModel.exercises[exercise.id]?.currentPrescription
   const performanceHistory=state.learningModel.exercises[exercise.id]?.performanceHistory??[]
   const source=learnedPrescription?{...exercise,prescription:learnedPrescription}:exercise
@@ -315,13 +334,19 @@ function plannedPrescription(exercise: Exercise, intention: Intention, goal: Goa
   const performanceMultiplier=learnedPrescription?1:averageRatio>=1.1?1.1:averageRatio<=.85?.9:1
   const goalAdjusted=performanceMultiplier===1?baseGoalAdjusted:{prescription:scaleNumbers(baseGoalAdjusted.prescription,performanceMultiplier),durationSeconds:Math.max(10,Math.round(baseGoalAdjusted.durationSeconds*performanceMultiplier/5)*5)}
   const affected = [...checkInAreas(state), ...activeIssueAreas(state)].some(area => exerciseMatchesArea(exercise, area) || exercise.contraindications.includes(area))
-  if (!affected) return { ...goalAdjusted, adjusted: false }
-  const stretchRecovery = exercise.category === 'stretching'
-  const multiplier = stretchRecovery ? 1.5 : 0.5
-  return {
-    prescription: `${scaleNumbers(goalAdjusted.prescription, multiplier)}${stretchRecovery ? ' 🎯' : ' 🩹'}`,
-    durationSeconds: Math.max(10, Math.round(goalAdjusted.durationSeconds * multiplier / 5) * 5),
-    adjusted: true,
+  const safetyAdjusted = !affected
+    ? { ...goalAdjusted, adjusted:false }
+    : (()=>{const stretchRecovery=exercise.category==='stretching';const multiplier=stretchRecovery?1.5:.5;return{
+      prescription:`${scaleNumbers(goalAdjusted.prescription,multiplier)}${stretchRecovery?' 🎯':' 🩹'}`,
+      durationSeconds:Math.max(10,Math.round(goalAdjusted.durationSeconds*multiplier/5)*5),
+      adjusted:true,
+    }})()
+  const multiplier=intention==='train'?effortMultiplier[trainingEffort]:1
+  if(multiplier===1)return safetyAdjusted
+  return{
+    ...safetyAdjusted,
+    prescription:scaleTrainingDose(safetyAdjusted.prescription,multiplier),
+    durationSeconds:Math.max(10,Math.round(safetyAdjusted.durationSeconds*multiplier/5)*5),
   }
 }
 
@@ -554,7 +579,7 @@ function requestedSetCount(preferences: BuilderPreferences, main: Exercise[], st
 }
 
 function planItem(exercise: Exercise, section: WorkoutExercise['section'], preferences: BuilderPreferences, state: AppState, setNumber?: number, totalSets?: number, slotLabel?: string,slotKey?:string): WorkoutExercise {
-  const prescription = plannedPrescription(exercise, preferences.intention, preferences.goal, state)
+  const prescription = plannedPrescription(exercise, preferences.intention, preferences.goal, state, trainingEffortFor(preferences,state))
   return {
     exerciseId: exercise.id,
     ...prescription,
@@ -609,7 +634,7 @@ function buildBalanceReport(plan: WorkoutPlan, preferences: BuilderPreferences, 
   if (selected.length !== plan.exercises.length) issues.push('One or more selected exercises could not be resolved.')
   if (selected.some(exercise => !equipmentMatches(exercise, preferences.equipment))) issues.push('An exercise requires unavailable equipment.')
   if (selected.some(exercise => state.profile.avoidList.includes(exercise.id))) issues.push('An avoided exercise was selected.')
-  if (selected.some(exercise => isFlareExcluded(exercise, state))) issues.push('An exercise conflicts with an active flare-up.')
+  if (selected.some(exercise => isFlareExcluded(exercise, state) || isPushTroubleAreaExcluded(exercise,preferences,state))) issues.push(trainingEffortFor(preferences,state)==='push'?'An exercise conflicts with an area flagged for Push It.':'An exercise conflicts with an active flare-up.')
   const firstSet = plan.exercises.filter(item => item.section === 'Main work' && (!item.setNumber || item.setNumber === 1)).map(item => resolveExercise(item.exerciseId, state)).filter((item): item is Exercise => Boolean(item))
   expectedSlots.forEach(movementSlot => {
     if (!firstSet.some(exercise => slotMatches(exercise, movementSlot))) issues.push(`Missing ${movementSlot.label} coverage.`)
@@ -628,6 +653,7 @@ function buildBalanceReport(plan: WorkoutPlan, preferences: BuilderPreferences, 
 }
 
 export function generateWorkout(preferences: BuilderPreferences, state: AppState, seed = new Date().toISOString().slice(0, 10), discouragedIds: Iterable<string> = []): WorkoutPlan {
+  const trainingEffort=trainingEffortFor(preferences,state)
   const desiredMinutes = preferences.durationMinutes === 'auto' ? null : preferences.durationMinutes
   const requestedExercises = requestedMainCount(preferences,state)
   const warnings: string[] = []
@@ -693,11 +719,13 @@ export function generateWorkout(preferences: BuilderPreferences, state: AppState
     createdAt: new Date().toISOString(),
     exercises: orderedPlan,
     focusAreas: preferences.focusAreas,
+    trainingEffort,
     insights: [
       preferences.intention === 'recover'
         ? `${restoreMovements.length} recovery movement${restoreMovements.length === 1 ? '' : 's'}${meditation.length ? ' plus a mindful close-out' : ''}.`
         : `${main.length} movement${main.length === 1 ? '' : 's'} × ${totalSets} set${totalSets === 1 ? '' : 's'}${familyCoverage.length ? `: ${familyCoverage.join(', ')}` : ''}${meditation.length ? '; mindful close-out included' : ''}.`,
       `About ${durationMinutes} min${desiredMinutes ? ` for a ${desiredMinutes} min target` : ''}.`,
+      ...(preferences.intention==='train'?[trainingEffort==='push'?'Training effort is Push It: reps and time are raised by 25%; flagged areas were omitted.':trainingEffort==='easy'?'Training effort is Take it easy: reps and time are reduced by 25%.':'Training effort is Standard.']:[]),
       readiness.status === 'ready' ? 'Current training load is ready.' : `Readiness is ${readiness.status}; volume and exercise choices were adjusted.`,
       state.issues.some(issue => issue.status === 'active')
         ? 'Active issues were applied as safety constraints.'
@@ -735,14 +763,16 @@ function compatiblePreferences(plan: WorkoutPlan, state: AppState): BuilderPrefe
     exercisesPerRound: 'auto',
     targetSets: 'auto',
     recoveryModes: ['mobility', 'stretching'],
+    trainingEffort: plan.intention==='train'?(plan.trainingEffort??state.trainingEffort):'standard',
   }
 }
 
-function variantsAtLevel(current: Exercise, level: number, state: AppState, equipment: Equipment[]) {
+function variantsAtLevel(current: Exercise, level: number, state: AppState, equipment: Equipment[], intention:Intention='train', trainingEffort:TrainingEffort=state.trainingEffort) {
   const eligible = allExercises(state).filter(exercise => exercise.level === level
     && exercise.category === current.category
     && equipmentMatches(exercise, equipment)
     && !isFlareExcluded(exercise, state)
+    && !isPushTroubleAreaExcluded(exercise,{intention,trainingEffort},state)
     && !state.profile.avoidList.includes(exercise.id)
     && (!exercise.optIn || state.profile.advancedBridges))
   const sameRole = eligible.filter(exercise => movementRole(exercise) === movementRole(current))
@@ -754,7 +784,7 @@ function variantsAtLevel(current: Exercise, level: number, state: AppState, equi
 export function findTierVariant(id: string, direction: -1 | 1, state: AppState, equipment = state.profile.equipment) {
   const current = resolveExercise(id, state)
   if (!current || current.level === 0 || current.isCustom) return null
-  return variantsAtLevel(current,current.level + direction,state,equipment).find(exercise=>exercise.id!==id) ?? null
+  return variantsAtLevel(current,current.level + direction,state,equipment,'train',state.trainingEffort).find(exercise=>exercise.id!==id) ?? null
 }
 
 function matchingOccurrences(plan: WorkoutPlan, index: number) {
@@ -773,11 +803,11 @@ export function scalePlanExercise(plan: WorkoutPlan, index: number, direction: -
   if(nextDifficulty===selectedDifficulty)return plan
   const variant = current.level===nextDifficulty
     ? current
-    : variantsAtLevel(current,nextDifficulty,state,plan.equipment??state.profile.equipment).find(exercise=>exercise.id!==current.id)
+    : variantsAtLevel(current,nextDifficulty,state,plan.equipment??state.profile.equipment,plan.intention,plan.trainingEffort??state.trainingEffort).find(exercise=>exercise.id!==current.id)
   if (!variant) return plan
   const originalLevel = item.originalLevel ?? current.level
   const scaled = nextDifficulty > originalLevel ? 'up' as const : nextDifficulty < originalLevel ? 'down' as const : null
-  const adjustment = plannedPrescription(variant, plan.intention, plan.goal, state)
+  const adjustment = plannedPrescription(variant, plan.intention, plan.goal, state, plan.trainingEffort??state.trainingEffort)
   const occurrences = matchingOccurrences(plan, index)
   const exercises = plan.exercises.map((entry, itemIndex) => occurrences.has(itemIndex) ? {
     ...entry,
@@ -852,7 +882,8 @@ export function removePlanExercise(plan: WorkoutPlan, index: number) {
 export function addPlanExercise(plan: WorkoutPlan, groupIndex: number, exerciseId: string, state: AppState) {
   const target = plan.exercises[groupIndex]
   const exercise = resolveExercise(exerciseId, state)
-  if (!target || !exercise) return plan
+  const preferences = compatiblePreferences(plan, state)
+  if (!target || !exercise || isFlareExcluded(exercise,state) || isPushTroubleAreaExcluded(exercise,preferences,state)) return plan
 
   const isRepeatedCircuit = target.section === 'Main work' && target.setNumber !== undefined
   const alreadyInGroup = plan.exercises.some(item => item.exerciseId === exerciseId
@@ -860,7 +891,6 @@ export function addPlanExercise(plan: WorkoutPlan, groupIndex: number, exerciseI
     && (isRepeatedCircuit || (item.setNumber ?? 0) === (target.setNumber ?? 0)))
   if (alreadyInGroup) return plan
 
-  const preferences = compatiblePreferences(plan, state)
   const addedItem = (template: WorkoutExercise) => ({
     ...planItem(exercise, template.section, preferences, state, template.setNumber, template.totalSets, 'Manually added'),
     rationale: 'Added manually while reviewing this session.',
@@ -954,7 +984,7 @@ export function swapPlanExercise(plan: WorkoutPlan, index: number, state: AppSta
   const choice = replacementFor(plan, index, state)
   if (!current || !choice) return plan
   const {replacement,swapHistory,difficultyLevel}=choice
-  const adjustment = plannedPrescription(replacement, plan.intention, plan.goal, state)
+  const adjustment = plannedPrescription(replacement, plan.intention, plan.goal, state, plan.trainingEffort??state.trainingEffort)
   const occurrences = matchingOccurrences(plan, index)
   const exercises = plan.exercises.map((item, itemIndex) => occurrences.has(itemIndex) ? {
     ...item,
@@ -1024,13 +1054,17 @@ export function generateCategoryWorkout(area: MuscleArea, state: AppState, durat
 }
 
 export function createManualWorkout(ids: string[], state: AppState): WorkoutPlan {
-  const selected = ids.map(id => resolveExercise(id, state)).filter((item): item is Exercise => Boolean(item))
-    .filter(exercise=>!state.profile.avoidList.includes(exercise.id)&&!isFlareExcluded(exercise,state)&&(exercise.optIn!=='advancedBridges'||state.profile.advancedBridges))
+  const candidates = ids.map(id => resolveExercise(id, state)).filter((item): item is Exercise => Boolean(item))
   const preferences: BuilderPreferences = {
     intention: 'train', goal: state.profile.goal, durationMinutes: 'auto', focusAreas: [], equipment: state.profile.equipment,
-    level: state.profile.level, includeConditioning: true, includeWarmup: true, includeMindfulness: selected.some(exercise=>exercise.category==='mindfulness'), exercisesPerRound: 'auto', targetSets: 1,
+    level: state.profile.level, includeConditioning: true, includeWarmup: true, includeMindfulness: candidates.some(exercise=>exercise.category==='mindfulness'), exercisesPerRound: 'auto', targetSets: 1,
     recoveryModes: ['mobility', 'stretching'],
+    trainingEffort: state.trainingEffort,
   }
+  const selected = candidates.filter(exercise=>!state.profile.avoidList.includes(exercise.id)
+    && !isFlareExcluded(exercise,state)
+    && !isPushTroubleAreaExcluded(exercise,preferences,state)
+    && (exercise.optIn!=='advancedBridges'||state.profile.advancedBridges))
   const manual: WorkoutExercise[] = selected.map(exercise => planItem(
     exercise,
     exercise.category === 'warmup' ? 'Prepare' : exercise.category === 'mobility' || exercise.category === 'stretching' || exercise.category === 'mindfulness' ? 'Restore' : exercise.category === 'conditioning' ? 'Condition' : 'Main work',
@@ -1049,6 +1083,7 @@ export function createManualWorkout(ids: string[], state: AppState): WorkoutPlan
     createdAt: new Date().toISOString(),
     exercises: manual,
     focusAreas: [],
+    trainingEffort: state.trainingEffort,
     insights: [`${manual.length} movements selected from your library.`, 'Adjust, scale, swap, reorder, or avoid any movement before starting.'],
   }
 }

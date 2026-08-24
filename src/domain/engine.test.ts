@@ -18,6 +18,34 @@ describe('workout engine', () => {
     expect(catalogueStats.total).toBeGreaterThan(300)
   })
 
+  it('applies training effort to the current prescription without changing exercise tier',()=>{
+    const standard=createManualWorkout(['x001'],defaultState)
+    const easy=createManualWorkout(['x001'],{...defaultState,trainingEffort:'easy'})
+    const push=createManualWorkout(['x001'],{...defaultState,trainingEffort:'push'})
+
+    expect(standard.exercises[0]).toMatchObject({exerciseId:'x001',prescription:'10-12 reps',durationSeconds:45,difficultyLevel:1})
+    expect(easy.exercises[0]).toMatchObject({exerciseId:'x001',prescription:'8-9 reps',durationSeconds:35,difficultyLevel:1})
+    expect(push.exercises[0]).toMatchObject({exerciseId:'x001',prescription:'13-15 reps',durationSeconds:55,difficultyLevel:1})
+    expect([easy.trainingEffort,standard.trainingEffort,push.trainingEffort]).toEqual(['easy','standard','push'])
+  })
+
+  it('keeps recovery dosing independent from the saved training effort',()=>{
+    const recovery={...preferences,intention:'recover' as const,goal:'mobility' as const,focusAreas:['hips' as const],includeWarmup:false,recoveryModes:['stretching' as const]}
+    const easy=generateWorkout(recovery,{...defaultState,trainingEffort:'easy'},'recovery-effort')
+    const push=generateWorkout(recovery,{...defaultState,trainingEffort:'push'},'recovery-effort')
+
+    expect(push.trainingEffort).toBe('standard')
+    expect(push.exercises.map(item=>[item.exerciseId,item.prescription,item.durationSeconds])).toEqual(easy.exercises.map(item=>[item.exerciseId,item.prescription,item.durationSeconds]))
+  })
+
+  it('omits active issues and today’s check-in areas from Push It training',()=>{
+    const issue={id:'chest',area:'chest' as const,severity:'moderate' as const,status:'active' as const,note:'',createdAt:new Date().toISOString(),side:'bilateral' as const,resolvedAt:null}
+    const pushState={...defaultState,trainingEffort:'push' as const,issues:[issue],dailyCheckIn:{date:new Date().toDateString(),tightAreas:['hands' as const],primaryArea:'hands' as const}}
+
+    expect(createManualWorkout(['x001','x042','l30'],pushState).exercises.map(item=>item.exerciseId)).toEqual(['l30'])
+    expect(createManualWorkout(['x001'],{...pushState,trainingEffort:'standard'}).exercises[0].adjusted).toBe(true)
+  })
+
   it('builds a varied, focus-led plan from available equipment', () => {
     const plan = generateWorkout(preferences, defaultState, 'fixed-seed')
     const main = plan.exercises.filter(item => item.section === 'Main work').map(item => exerciseById.get(item.exerciseId)!)

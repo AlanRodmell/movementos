@@ -20,7 +20,7 @@ describe('state migration', () => {
   })
 
   it('continues to write the existing key and schema-v11 backup contract', () => {
-    const state = { ...defaultState, profile:{ ...defaultState.profile, name:'Alex', favourites:['u1'] } }
+    const state = { ...defaultState, trainingEffort:'push' as const, profile:{ ...defaultState.profile, name:'Alex', favourites:['u1'] } }
     saveState(state)
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
     expect(stored.schemaVersion).toBe(11)
@@ -29,6 +29,8 @@ describe('state migration', () => {
     expect(stored.savedWorkouts).toEqual([])
     expect(stored.customExercises).toEqual({})
     expect(stored.learningModel).toEqual(defaultState.learningModel)
+    expect(stored.trainingEffort).toBe('push')
+    expect(normaliseState(stored).trainingEffort).toBe('push')
   })
 
   it('migrates missing learning data and round-trips learned evidence',()=>{
@@ -42,13 +44,15 @@ describe('state migration', () => {
   it('round-trips saved workouts and custom exercises through the legacy format', () => {
     const state = normaliseState({
       schemaVersion:11,
-      savedWorkouts:[{ id:'fav_one', name:'Upper', groups:[{ heading:'Main work', items:[{ id:'u1', reps:'8 reps', secs:40 }] }] }],
+      savedWorkouts:[{ id:'fav_one', name:'Upper', trainingEffort:'easy', groups:[{ heading:'Main work', items:[{ id:'u1', reps:'8 reps', secs:40 }] }] }],
       customExercises:{ u_custom_1:{ name:'My press', reps:'12 reps', secs:45, detail:'Press smoothly.', tier:2, family:'push', customBodyArea:'chest', isCustom:true } },
     })
     expect(state.savedPlans[0].exercises[0].exerciseId).toBe('u1')
+    expect(state.savedPlans[0].trainingEffort).toBe('easy')
     expect(state.customExercises[0].primaryMuscles).toEqual(['chest'])
     const output = serializeLegacyState(state)
     expect(output.savedWorkouts[0].groups[0].items[0].id).toBe('u1')
+    expect(output.savedWorkouts[0].trainingEffort).toBe('easy')
     expect(output.customExercises.u_custom_1.reps).toBe('12 reps')
   })
 

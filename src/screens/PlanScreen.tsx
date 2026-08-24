@@ -276,14 +276,17 @@ export function PlanScreen({ plan, customExercises, isSaved, onStart, onSave, on
   const mainWork=plan.exercises.filter(item=>item.section==='Main work')
   const numberedSets=[...new Set(mainWork.map(item=>item.setNumber).filter((value):value is number=>value!==undefined))]
   const setCount=Math.max(1,numberedSets.length)
+  const planEffort=plan.trainingEffort??'standard'
+  const effortLabel=planEffort==='easy'?'Take it easy':planEffort==='push'?'Push it':'Standard'
 
-  return <div className="screen plan-screen">
+  return <div className={`screen plan-screen effort-${plan.intention==='train'?planEffort:'standard'}`}>
     <section className="plan-hero">
       <div className="plan-title-block"><span className="eyebrow">YOUR SESSION</span><h1>{plan.name}</h1></div>
       <div className="plan-fact"><span>◎</span><div><strong>{pretty(plan.goal)}</strong><small>Focus</small></div></div>
       <div className="plan-fact"><span>◷</span><div><strong>{plan.durationMinutes} min</strong><small>Est. duration</small></div></div>
       {mainWork.length>0&&<div className="plan-fact plan-set-summary"><span>↻</span><div><strong>{setCount} {setCount===1?'set':'sets'}</strong><small>Main circuit sets</small></div></div>}
     </section>
+    {plan.intention==='train'?<div className={`plan-effort-banner effort-${planEffort}`}><span>{planEffort==='easy'?'−':planEffort==='push'?'+':'●'}</span><div><strong>Training effort · {effortLabel}</strong><small>{planEffort==='easy'?'Reps and time are reduced by 25%; exercise tiers stay the same.':planEffort==='push'?'Reps and time are raised by 25%; exercises for flagged areas are omitted.':'Your usual adaptive reps and time; exercise tiers stay the same.'}</small></div></div>:<div className="plan-effort-banner paused"><span>〰</span><div><strong>Training effort paused</strong><small>Recovery sessions keep their existing therapeutic dosing.</small></div></div>}
 
     {mainWork.length>0&&<section className="plan-set-builder" aria-labelledby="workout-sets-title">
       <div><span className="eyebrow">WORKOUT SETS</span><h2 id="workout-sets-title">How many sets?</h2><p>Choose how many times to complete the main circuit. Preparation, conditioning and recovery stay single-pass.</p></div>

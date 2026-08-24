@@ -11,6 +11,17 @@ function submitDefaultBuilder() {
   fireEvent.click(screen.getByRole('button',{name:/generate my session/i}))
 }
 
+it('persists Push It and snapshots it onto the next training plan',()=>{
+  render(<App/>)
+
+  fireEvent.click(screen.getByRole('button',{name:/Push it/}))
+  expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).trainingEffort).toBe('push')
+  expect(document.querySelector('.app-shell')).toHaveClass('effort-push')
+  fireEvent.click(screen.getByRole('button',{name:/Upper body/}))
+  expect(screen.getByText('Training effort · Push it')).toBeInTheDocument()
+  expect(document.querySelector('.plan-screen')).toHaveClass('effort-push')
+})
+
 it('builds a fresh routine on each builder submission and exposes one start action',()=>{
   render(<App/>)
 

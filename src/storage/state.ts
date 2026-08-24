@@ -1,4 +1,4 @@
-import type { ActiveSession, AppState, Category, Equipment, Exercise, ExerciseStat, Goal, Level, MuscleArea, WorkoutExercise, WorkoutPlan, WorkoutSession } from '../domain/types'
+import type { ActiveSession, AppState, Category, Equipment, Exercise, ExerciseStat, Goal, Level, MuscleArea, TrainingEffort, WorkoutExercise, WorkoutPlan, WorkoutSession } from '../domain/types'
 import { emptyLearningModel, normaliseLearningModel } from '../domain/learning'
 
 export const STORAGE_KEY = 'movementos:state'
@@ -7,6 +7,7 @@ export const SCHEMA_VERSION = 11
 
 export const defaultState: AppState = {
   schemaVersion: SCHEMA_VERSION,
+  trainingEffort: 'standard',
   profile: {
     name: '', level: 2, goal: 'general', equipment: ['none', 'wall', 'chair'], soundEnabled: true,
     waitBetweenExercises: true, avoidList: [], favourites: [], advancedBridges: false,
@@ -22,6 +23,7 @@ const goals: Goal[] = ['general','strength','muscle','endurance','mobility']
 const categories: Category[] = ['warmup','upper','lower','core','conditioning','mobility','stretching','mindfulness']
 const equipment: Equipment[] = ['none','wall','chair','bench','table','bar','bands','dumbbells','kettlebell','barbell','cable','machine','slider','box','rope']
 const areas: MuscleArea[] = ['full_body','upper_body','lower_body','chest','upper_back','mid_back','lower_back','shoulders','anterior_shoulder','posterior_shoulder','biceps','triceps','core','deep_core','rectus_abdominis','obliques','hips','hip_flexors','glutes','quads','hamstrings','adductors','calves','legs','neck','mind','elbows','forearms','wrists','hands','knees','shins','ankles','feet']
+const trainingEfforts: TrainingEffort[] = ['easy','standard','push']
 const safeText = (value: unknown, fallback = '', max = 500) => typeof value === 'string' ? value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').slice(0, max) : fallback
 const safeIds = (value: unknown) => Array.isArray(value) ? [...new Set(value.filter(item => typeof item === 'string' && /^[\w-]{1,100}$/.test(item)))].slice(0, 1000) : []
 const level = (value: unknown): Level => Math.max(1, Math.min(5, Number(value) || 2)) as Level
@@ -47,6 +49,7 @@ function migrateHistory(raw: Record<string, unknown>): WorkoutSession[] {
       durationSeconds: Math.max(0, Number(session.durationSeconds) || 0),
       intention: session.intention === 'recovery' || session.intention === 'recover' ? 'recover' : 'train',
       goal: goals.includes(session.goal as Goal) ? session.goal as Goal : 'general',
+      trainingEffort: trainingEfforts.includes(session.trainingEffort as TrainingEffort) ? session.trainingEffort as TrainingEffort : undefined,
       rating: ['easy','good','hard','brutal','unrated'].includes(String(session.rating)) ? session.rating as WorkoutSession['rating'] : 'unrated',
       completedExerciseIds: safeIds(session.completedExerciseIds).length ? safeIds(session.completedExerciseIds) : exerciseRows.map(entry => entry.id),
       exercises: exerciseRows,
@@ -136,6 +139,7 @@ function planFromUnknown(value: unknown, fallbackId = 'plan_import'): WorkoutPla
     createdAt: Number.isFinite(Date.parse(String(raw.createdAt))) ? new Date(String(raw.createdAt)).toISOString() : new Date(0).toISOString(), exercises,
     insights: Array.isArray(raw.insights) ? raw.insights.map(value => safeText(value, '', 200)).filter(Boolean).slice(0, 10) : ['Restored from your saved workout library.'],
     focusAreas: Array.isArray(raw.focusAreas) ? raw.focusAreas.map(value => safeArea(value)).slice(0, 20) : [],
+    trainingEffort: trainingEfforts.includes(raw.trainingEffort as TrainingEffort) ? raw.trainingEffort as TrainingEffort : 'standard',
     balanceReport:raw.balanceReport&&typeof raw.balanceReport==='object'?raw.balanceReport as WorkoutPlan['balanceReport']:undefined,
   }
 }
@@ -163,6 +167,7 @@ export function normaliseState(value: unknown): AppState {
   const exerciseStats=Object.keys(migratedStats).length?migratedStats:rebuildExerciseStats(history)
   return {
     schemaVersion: SCHEMA_VERSION,
+    trainingEffort: trainingEfforts.includes(raw.trainingEffort as TrainingEffort) ? raw.trainingEffort as TrainingEffort : 'standard',
     profile: {
       name: safeText(profile.name, '', 80), level: level(profile.level ?? inferredLevel),
       goal: goals.includes(profile.goal as Goal) ? profile.goal as Goal : goals.includes(profile.trainingGoal as Goal) ? profile.trainingGoal as Goal : 'general',
@@ -199,12 +204,12 @@ export function serializeLegacyState(state: AppState) {
     category: exercise.category, equipment: exercise.equipment, primaryMuscles: exercise.primaryMuscles, unilateral: exercise.unilateral, lowImpact: exercise.lowImpact, goals: exercise.goals, contraindications: exercise.contraindications,
   }]))
   return {
-    schemaVersion: SCHEMA_VERSION, dailyCheckIn:state.dailyCheckIn,
+    schemaVersion: SCHEMA_VERSION, trainingEffort:state.trainingEffort, dailyCheckIn:state.dailyCheckIn,
     profile: { height:state.profile.height, weight:state.profile.weight, heightUnit:state.profile.heightUnit, weightUnit:state.profile.weightUnit, trainingGoal:state.profile.goal, upper:state.profile.upper, lower:state.profile.lower, core:state.profile.core, conditioning:state.profile.conditioning, unlocks:{ advancedBridges:state.profile.advancedBridges }, soundEnabled:state.profile.soundEnabled, waitBetweenExercises:state.profile.waitBetweenExercises, avoidList:state.profile.avoidList, alwaysInclude:state.profile.favourites, name:state.profile.name, level:state.profile.level, goal:state.profile.goal, equipment:state.profile.equipment, favourites:state.profile.favourites },
     rotation:state.rotation, history:state.legacyHistory,
-    workoutHistory: state.history.map(session => ({ id:session.id, date:session.date, name:session.planName, durationSeconds:session.durationSeconds, plannedExercises:session.exercises.length, completedExercises:session.completedExerciseIds.length, rating:session.rating, focus:session.focus, intention:session.intention === 'recover' ? 'recovery' : 'workout', goal:session.goal, completedExerciseIds:session.completedExerciseIds, exercises:session.exercises.map(exercise => ({ id:exercise.id, name:exercise.name, family:null, reps:exercise.prescription, detail:'', secs:exercise.durationSeconds,plannedAppearances:exercise.plannedAppearances,completedAppearances:exercise.completedAppearances,skippedAppearances:exercise.skippedAppearances,adjusted:exercise.adjusted,swapped:exercise.swapped,feedback:exercise.feedback,performance:exercise.performance })) , areaLoadBefore:session.areaLoadBefore,actions:session.actions,balanceReport:session.balanceReport,planStructure:session.planStructure })),
+    workoutHistory: state.history.map(session => ({ id:session.id, date:session.date, name:session.planName, durationSeconds:session.durationSeconds, plannedExercises:session.exercises.length, completedExercises:session.completedExerciseIds.length, rating:session.rating, focus:session.focus, intention:session.intention === 'recover' ? 'recovery' : 'workout', goal:session.goal, trainingEffort:session.trainingEffort, completedExerciseIds:session.completedExerciseIds, exercises:session.exercises.map(exercise => ({ id:exercise.id, name:exercise.name, family:null, reps:exercise.prescription, detail:'', secs:exercise.durationSeconds,plannedAppearances:exercise.plannedAppearances,completedAppearances:exercise.completedAppearances,skippedAppearances:exercise.skippedAppearances,adjusted:exercise.adjusted,swapped:exercise.swapped,feedback:exercise.feedback,performance:exercise.performance })) , areaLoadBefore:session.areaLoadBefore,actions:session.actions,balanceReport:session.balanceReport,planStructure:session.planStructure })),
     exerciseStats:state.exerciseStats, recovery:state.recovery,
-    savedWorkouts: state.savedPlans.map(plan => ({ id:plan.id, name:plan.name, groups:legacyGroups(plan), intention:plan.intention, goal:plan.goal, durationMinutes:plan.durationMinutes, targetDurationMinutes:plan.targetDurationMinutes, equipment:plan.equipment, createdAt:plan.createdAt, insights:plan.insights, focusAreas:plan.focusAreas,balanceReport:plan.balanceReport })),
+    savedWorkouts: state.savedPlans.map(plan => ({ id:plan.id, name:plan.name, groups:legacyGroups(plan), intention:plan.intention, goal:plan.goal, trainingEffort:plan.trainingEffort, durationMinutes:plan.durationMinutes, targetDurationMinutes:plan.targetDurationMinutes, equipment:plan.equipment, createdAt:plan.createdAt, insights:plan.insights, focusAreas:plan.focusAreas,balanceReport:plan.balanceReport })),
     customExercises, issues:state.issues, activeSession:state.activeSession,learningModel:state.learningModel,
   }
 }

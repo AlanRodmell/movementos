@@ -350,6 +350,7 @@ export interface BuilderPreferences {
 export interface AppState {
   schemaVersion: number
   trainingEffort: TrainingEffort
+  trainingEffortDate: string | null
   profile: Profile
   issues: Issue[]
   history: WorkoutSession[]

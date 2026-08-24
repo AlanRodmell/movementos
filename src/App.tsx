@@ -10,7 +10,7 @@ import { PlayerScreen } from './screens/PlayerScreen'
 import { ProgressScreen } from './screens/ProgressScreen'
 import { ProfileScreen } from './screens/ProfileScreen'
 import { SavedPlansScreen } from './screens/SavedPlansScreen'
-import { defaultState, loadState, saveState } from './storage/state'
+import { defaultState, loadState, localDateKey, saveState } from './storage/state'
 import { recordProfileSignal, respondToProgression, revertProgression } from './domain/learning'
 import { unlockWorkoutAudio } from './audio/workoutAudio'
 import './styles.css'
@@ -25,6 +25,12 @@ export default function App() {
   const [lastPreferences, setLastPreferences] = useState<BuilderPreferences | null>(null)
   const [createCustom,setCreateCustom]=useState(false)
   useEffect(() => { saveState(state) }, [state])
+  useEffect(() => {
+    const now=new Date()
+    const nextDay=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1)
+    const timer=window.setTimeout(()=>setState(current=>({...current,trainingEffort:'standard',trainingEffortDate:null})),nextDay.getTime()-now.getTime()+50)
+    return ()=>window.clearTimeout(timer)
+  },[state.trainingEffortDate])
 
   const navigate = (next: View) => { if (next !== view) setHistory(current => [...current, view]); setView(next); window.scrollTo(0,0) }
   const goBack = () => { const copy = [...history]; const target = copy.pop() ?? 'home'; setHistory(copy); setView(target); window.scrollTo(0,0) }
@@ -61,7 +67,7 @@ export default function App() {
   let content: React.ReactNode
   const openSavedPlan=(index:number)=>{const savedPlan=state.savedPlans[index];if(savedPlan)showPlan(savedPlan)}
   const planIsSaved=Boolean(plan&&state.savedPlans.some(saved=>saved.id===plan.id&&JSON.stringify(saved.exercises)===JSON.stringify(plan.exercises)))
-  if (view === 'home') content = <HomeScreen state={state} onTrainingEffort={(trainingEffort:TrainingEffort)=>setState(current=>({...current,trainingEffort}))} onBuild={() => navigate('builder')} onSuggested={suggested} onCategory={category} onResume={() => { setPlan(state.activeSession?.plan ?? null); navigate('player') }} onOpenPlan={openSavedPlan} onViewSaved={()=>navigate('saved')}/>
+  if (view === 'home') content = <HomeScreen state={state} onTrainingEffort={(trainingEffort:TrainingEffort)=>setState(current=>({...current,trainingEffort,trainingEffortDate:localDateKey()}))} onBuild={() => navigate('builder')} onSuggested={suggested} onCategory={category} onResume={() => { setPlan(state.activeSession?.plan ?? null); navigate('player') }} onOpenPlan={openSavedPlan} onViewSaved={()=>navigate('saved')}/>
   else if (view === 'builder') content = <BuilderScreen profile={state.profile} dailyCheckIn={state.dailyCheckIn} onCheckIn={dailyCheckIn => setState(current => ({ ...current,dailyCheckIn }))} onGenerate={preferences => showPlan(generateFreshWorkout(preferences, state, plan), preferences)}/>
   else if (view === 'plan' && plan) content = <PlanScreen plan={plan} customExercises={state.customExercises} isSaved={planIsSaved} onStart={startPlan} onSave={() => setState(current => ({ ...current, savedPlans: [plan, ...current.savedPlans.filter(item => item.id !== plan.id)].slice(0,50) }))} onViewSaved={()=>navigate('saved')} onRegenerate={() => showPlan(lastPreferences ? generateFreshWorkout(lastPreferences,state,plan) : generateCategoryWorkout('full_body',state), lastPreferences ?? undefined)} onSetCount={sets=>setPlan(setPlanSetCount(plan,sets))} onEasier={index=>setPlan(scalePlanExercise(plan,index,-1,state))} onHarder={index=>setPlan(scalePlanExercise(plan,index,1,state))} onAdjust={(index,direction)=>setPlan(adjustPlanPrescription(plan,index,direction))} onSwap={index=>setPlan(swapPlanExercise(plan,index,state))} onReorder={(fromIndex,toIndex)=>setPlan(reorderPlanExercise(plan,fromIndex,toIndex))} onAdd={(groupIndex,exerciseId)=>setPlan(addPlanExercise(plan,groupIndex,exerciseId,state))} onRemove={index=>setPlan(removePlanExercise(plan,index))} onAvoid={avoidFromPlan}/>
   else if (view === 'library') content = <LibraryScreen state={state} onToggleFavourite={id => toggleList('favourites',id)} onToggleAvoid={id => toggleList('avoidList',id)} onCreateExercise={()=>{setCreateCustom(true);navigate('profile')}} onDeleteCustom={id=>setState(current=>({...current,customExercises:current.customExercises.filter(item=>item.id!==id)}))} onBuildSelected={ids=>showPlan(createManualWorkout(ids,state))}/>

@@ -10,21 +10,28 @@ const categories: Array<{ area: MuscleArea; label: string; icon: string; note: s
   { area: 'hips', label: 'Mobility', icon: '〰', note: 'Restore range + control' },
 ]
 
-const effortOptions:Array<{id:TrainingEffort;label:string;note:string;symbol:string}>=[
-  {id:'easy',label:'Take it easy',note:'25% fewer reps and less time',symbol:'−'},
-  {id:'standard',label:'Standard',note:'Your usual adaptive training dose',symbol:'●'},
-  {id:'push',label:'Push it',note:'25% more, with flagged areas omitted',symbol:'+'},
+const effortOptions:Array<{id:TrainingEffort;label:string;note:string}>=[
+  {id:'easy',label:'Take it easy',note:'25% fewer reps and less time'},
+  {id:'standard',label:'Standard',note:'Your usual adaptive training dose'},
+  {id:'push',label:'Push it',note:'25% more, with flagged areas omitted'},
 ]
 
 export function HomeScreen({ state, onTrainingEffort, onBuild, onSuggested, onCategory, onResume, onOpenPlan, onViewSaved }: { state: AppState; onTrainingEffort:(effort:TrainingEffort)=>void; onBuild: () => void; onSuggested: () => void; onCategory: (area: MuscleArea) => void; onResume: () => void; onOpenPlan: (index: number) => void; onViewSaved:()=>void }) {
   const stats = getDashboardStats(state)
+  const effortIndex=Math.max(0,effortOptions.findIndex(option=>option.id===state.trainingEffort))
+  const selectedEffort=effortOptions[effortIndex]
   return <div className="screen home-screen">
     {state.activeSession && <section className="resume-card"><div><span className="eyebrow">SESSION IN PROGRESS</span><h2>{state.activeSession.plan.name}</h2><p>Movement {state.activeSession.index + 1} of {state.activeSession.plan.exercises.length}</p></div><button className="primary" onClick={onResume}>Resume <span>→</span></button></section>}
     <section className="hero-card">
       <span className="eyebrow">TODAY · READY TO MOVE</span>
       <h1>{state.profile.name ? `Good to see you, ${state.profile.name}.` : 'Train for the body you have today.'}</h1>
       <p>Adaptive sessions shaped by your goal, equipment, recent work, and anything you’re managing.</p>
-      <div className="training-effort-control"><div className="training-effort-heading"><strong>Training effort</strong><small>Applies to training sessions only</small></div><div className="effort-segments" role="group" aria-label="Training effort">{effortOptions.map(option=><button key={option.id} className={`effort-${option.id} ${state.trainingEffort===option.id?'selected':''}`} aria-pressed={state.trainingEffort===option.id} onClick={()=>onTrainingEffort(option.id)}><span>{option.symbol}</span><strong>{option.label}</strong><small>{option.note}</small></button>)}</div></div>
+      <div className={`training-effort-control effort-${selectedEffort.id}`}>
+        <div className="training-effort-heading"><label htmlFor="training-effort-slider">Training effort</label><strong>{selectedEffort.label}</strong></div>
+        <input id="training-effort-slider" className="effort-slider" type="range" min="0" max="2" step="1" value={effortIndex} aria-valuetext={`${selectedEffort.label}. ${selectedEffort.note}`} onChange={event=>onTrainingEffort(effortOptions[Number(event.currentTarget.value)].id)}/>
+        <div className="effort-slider-labels" aria-hidden="true">{effortOptions.map(option=><span key={option.id}>{option.label}</span>)}</div>
+        <small className="effort-summary">{selectedEffort.note} · Training sessions only · Resets to Standard tomorrow</small>
+      </div>
       <div className="hero-actions"><button className="primary" onClick={onSuggested}>Start what’s best today <span>→</span></button><button className="secondary" onClick={onBuild}>Build my own</button></div>
     </section>
 

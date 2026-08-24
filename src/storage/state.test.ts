@@ -1,4 +1,4 @@
-import { defaultState, normaliseState, saveState, SCHEMA_VERSION, serializeLegacyState, STORAGE_KEY } from './state'
+import { defaultState, localDateKey, normaliseState, saveState, SCHEMA_VERSION, serializeLegacyState, STORAGE_KEY } from './state'
 
 describe('state migration', () => {
   it('preserves useful version 11 profile and history data', () => {
@@ -20,7 +20,7 @@ describe('state migration', () => {
   })
 
   it('continues to write the existing key and schema-v11 backup contract', () => {
-    const state = { ...defaultState, trainingEffort:'push' as const, profile:{ ...defaultState.profile, name:'Alex', favourites:['u1'] } }
+    const state = { ...defaultState, trainingEffort:'push' as const, trainingEffortDate:localDateKey(), profile:{ ...defaultState.profile, name:'Alex', favourites:['u1'] } }
     saveState(state)
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
     expect(stored.schemaVersion).toBe(11)
@@ -31,6 +31,13 @@ describe('state migration', () => {
     expect(stored.learningModel).toEqual(defaultState.learningModel)
     expect(stored.trainingEffort).toBe('push')
     expect(normaliseState(stored).trainingEffort).toBe('push')
+  })
+
+  it('resets training effort when its saved local date has passed',()=>{
+    vi.useFakeTimers();vi.setSystemTime(new Date(2026,7,24,9))
+    expect(normaliseState({trainingEffort:'easy',trainingEffortDate:'2026-08-23'})).toMatchObject({trainingEffort:'standard',trainingEffortDate:null})
+    expect(normaliseState({trainingEffort:'push',trainingEffortDate:'2026-08-24'})).toMatchObject({trainingEffort:'push',trainingEffortDate:'2026-08-24'})
+    vi.useRealTimers()
   })
 
   it('migrates missing learning data and round-trips learned evidence',()=>{

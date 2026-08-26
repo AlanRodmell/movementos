@@ -37,6 +37,12 @@ it('renders complete empty states before the user has any history',()=>{
   expect(screen.getByText(/Complete your first workout/)).toBeInTheDocument()
 })
 
+it('shows Google Health sync as a non-blocking status message',()=>{
+  render(<ProgressScreen state={defaultState} googleHealthStatus={{state:'failed',message:'Workout saved here, but could not be sent to Google Health.',sessionId:'session_1'}}/>)
+  expect(screen.getByRole('status')).toHaveTextContent('Workout saved here')
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
 it('shows populated analytics, custom names, readiness, balance failures, charts and recent dates',()=>{
   const custom={id:'u_custom_progress',name:'Custom Carry',description:'Carry',category:'upper' as const,pattern:'carry',level:1 as const,durationSeconds:30,prescription:'30 sec',equipment:['none' as const],primaryMuscles:['upper_body' as const],secondaryMuscles:[],unilateral:false,lowImpact:true,goals:['general' as const],contraindications:[],isCustom:true}
   const balance={valid:false,templateKey:'general-full-body',requiredRoles:['horizontal_push' as const],coveredRoles:[],requiredAreas:['upper_body' as const],coveredAreas:[],sectionCounts:{'Main work':1},issues:['Missing horizontal push coverage.'],generatedAt:new Date().toISOString()}

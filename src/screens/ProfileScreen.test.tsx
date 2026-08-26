@@ -13,6 +13,27 @@ it('offers a full local-data reset from the Data panel',()=>{
   expect(onResetData).toHaveBeenCalledOnce()
 })
 
+it('shows the one-way Google Health connection state beside Data actions',()=>{
+  const onConnect=vi.fn()
+  const {rerender}=render(<ProfileScreen {...props({googleHealth:{configured:true,connected:false,status:{state:'idle',message:''},onConnect,onDisconnect:vi.fn()}})}/>)
+  expect(screen.getByText(/only sends a session after it is saved here/i)).toBeInTheDocument()
+  expect(screen.getByText(/never reads Google Health data/i)).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button',{name:'Connect Google Health'}))
+  expect(onConnect).toHaveBeenCalledOnce()
+  const onDisconnect=vi.fn()
+  rerender(<ProfileScreen {...props({googleHealth:{configured:true,connected:true,status:{state:'success',message:'Google Health connected.'},onConnect,onDisconnect}})}/>)
+  expect(screen.getByText('Connected')).toBeInTheDocument()
+  expect(screen.getByRole('status')).toHaveTextContent('Google Health connected.')
+  fireEvent.click(screen.getByRole('button',{name:'Disconnect Google Health'}))
+  expect(onDisconnect).toHaveBeenCalledOnce()
+})
+
+it('keeps Google Health disabled until deployment setup is complete',()=>{
+  render(<ProfileScreen {...props({googleHealth:{configured:false,connected:false,status:{state:'idle',message:''},onConnect:vi.fn(),onDisconnect:vi.fn()}})}/>)
+  expect(screen.getByRole('button',{name:'Connect Google Health'})).toBeDisabled()
+  expect(screen.getByText(/GOOGLE_HEALTH_SETUP.md/)).toBeInTheDocument()
+})
+
 it('updates identity, goal, independent levels, equipment and playback preferences',()=>{
   const onProfile=vi.fn()
   render(<ProfileScreen {...props({onProfile})}/>)

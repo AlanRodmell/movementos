@@ -47,3 +47,18 @@ test('a persisted session resumes, records feedback, and completes',async({page}
   await expect(page.getByRole('heading',{name:'Progress is the work repeated.'})).toBeVisible()
   await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('movementos:state')!).activeSession)).toBeNull()
 })
+
+test('issue and focus pickers size to their content on mobile',async({page})=>{
+  await page.addInitScript(()=>localStorage.setItem('movementos:state',JSON.stringify({schemaVersion:11,onboardingCompleted:true,profile:{name:'Alex',goal:'general',level:2,upper:2,lower:2,core:2,conditioning:2,equipment:['none','wall','chair'],soundEnabled:false,waitBetweenExercises:true}})))
+  await page.goto('/')
+  await page.getByRole('button',{name:'Build my own'}).click()
+  const panel=page.locator('.wizard-panel')
+  await expect(panel).toHaveClass(/content-sized/)
+  await expect.poll(()=>panel.evaluate(element=>getComputedStyle(element).minHeight)).toBe('0px')
+  expect((await panel.boundingBox())?.height).toBeLessThan(600)
+  await page.getByRole('button',{name:/Continue/}).click()
+  await page.getByRole('button',{name:/Continue/}).click()
+  await page.getByRole('button',{name:/Continue/}).click()
+  await expect(panel).toHaveClass(/content-sized/)
+  await expect.poll(()=>panel.evaluate(element=>getComputedStyle(element).minHeight)).toBe('0px')
+})

@@ -16,6 +16,7 @@ import { OnboardingScreen } from './screens/OnboardingScreen'
 import { defaultState, downloadBackup, loadState, localDateKey, saveState } from './storage/state'
 import { recordProfileSignal, respondToProgression, revertProgression } from './domain/learning'
 import { unlockWorkoutAudio } from './audio/workoutAudio'
+import { beginGoogleHealthConnection, consumeGoogleHealthCallbackResult, disconnectGoogleHealth, isGoogleHealthConfigured, loadGoogleHealthConnection, syncWorkoutToGoogleHealth, type GoogleHealthStatus } from './integrations/googleHealth'
 import './styles.css'
 
 const titles: Record<View,string> = { home: 'Home', checkin:'Daily check-in', builder: 'Build a session', plan: 'Your session', library: 'Exercise library', saved:'Saved workouts', player: 'Active session', progress: 'Progress', profile: 'Profile' }
@@ -28,7 +29,15 @@ export default function App() {
   const [lastPreferences, setLastPreferences] = useState<BuilderPreferences | null>(null)
   const [createCustom,setCreateCustom]=useState(false)
   const [storageError,setStorageError]=useState(false)
+  const [googleHealthConnection,setGoogleHealthConnection]=useState(()=>loadGoogleHealthConnection())
+  const [googleHealthStatus,setGoogleHealthStatus]=useState<GoogleHealthStatus>({state:'idle',message:''})
   useEffect(() => { setStorageError(!saveState(state)) }, [state])
+  useEffect(()=>{
+    const result=consumeGoogleHealthCallbackResult()
+    if(!result)return
+    setGoogleHealthConnection(loadGoogleHealthConnection())
+    setGoogleHealthStatus({state:result.ok?'success':'failed',message:result.message})
+  },[])
   useEffect(() => {
     const now=new Date()
     const nextDay=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1)
@@ -56,7 +65,16 @@ export default function App() {
     navigate('player')
   }
   const persistSession = useCallback((activeSession: ActiveSession) => setState(current => ({ ...current, activeSession })), [])
-  const complete = (session: WorkoutSession) => { setState(current => ({ ...applySessionCompletion(current, session), activeSession:null })); setHistory([]); setView('progress'); window.scrollTo(0,0) }
+  const complete = (session: WorkoutSession) => {
+    const startedAt=state.activeSession?.startedAt??Date.parse(session.date)-session.durationSeconds*1000
+    const nextState={...applySessionCompletion(state,session),activeSession:null}
+    const saved=saveState(nextState)
+    setState(nextState);setStorageError(!saved);setHistory([]);setView('progress');window.scrollTo(0,0)
+    if(!googleHealthConnection)return
+    if(!saved){setGoogleHealthStatus({state:'failed',message:'Workout could not be saved here, so it was not sent to Google Health.',sessionId:session.id});return}
+    setGoogleHealthStatus({state:'syncing',message:'Sending workout to Google Health…',sessionId:session.id})
+    void syncWorkoutToGoogleHealth(googleHealthConnection,session,startedAt).then(result=>{setGoogleHealthConnection(result.connection);setGoogleHealthStatus(result.status)})
+  }
   const addIssue=(area:MuscleArea,severity:'mild'|'moderate'|'flare',side:'left'|'right'|'bilateral',note:string)=>setState(current => ({ ...current, issues: [{ id:`issue_${Date.now()}`, area, severity, side, note:note.slice(0,500), status:'active', createdAt:new Date().toISOString(), resolvedAt:null }, ...current.issues] }))
   const upsertCustom = (exercise: Exercise) => setState(current => ({ ...current, customExercises:[exercise, ...current.customExercises.filter(item => item.id !== exercise.id)].slice(0,250) }))
   const avoidFromPlan = (index:number,id:string) => {
@@ -65,7 +83,17 @@ export default function App() {
   }
   const resetAllData=()=>{
     if(!confirm('Reset all Movement OS data on this device? This permanently deletes your profile, workouts, history, issues, learning data, and custom exercises. Export a backup first if you may need it.'))return
+    void disconnectGoogleHealth(googleHealthConnection);setGoogleHealthConnection(null);setGoogleHealthStatus({state:'idle',message:''})
     setState(structuredClone(defaultState));setPlan(null);setLastPreferences(null);setCreateCustom(false);setHistory([]);setView('home');window.scrollTo(0,0)
+  }
+  const connectGoogleHealth=()=>{
+    setGoogleHealthStatus({state:'syncing',message:'Opening Google Health consent…'})
+    void beginGoogleHealthConnection().catch(()=>setGoogleHealthStatus({state:'failed',message:'Google Health connection could not be started.'}))
+  }
+  const disconnectFromGoogleHealth=()=>{
+    const connection=googleHealthConnection
+    setGoogleHealthConnection(null);setGoogleHealthStatus({state:'idle',message:'Google Health disconnected.'})
+    void disconnectGoogleHealth(connection)
   }
 
   const storageWarning=storageError?<StorageWarning onExport={()=>downloadBackup(state)} onRetry={()=>setStorageError(!saveState(state))}/>:null
@@ -81,8 +109,8 @@ export default function App() {
   else if (view === 'plan' && plan) content = <PlanScreen plan={plan} customExercises={state.customExercises} isSaved={planIsSaved} onStart={startPlan} onSave={() => setState(current => ({ ...current, savedPlans: [plan, ...current.savedPlans.filter(item => item.id !== plan.id)].slice(0,50) }))} onViewSaved={()=>navigate('saved')} onRegenerate={() => showPlan(lastPreferences ? generateFreshWorkout(lastPreferences,state,plan) : generateCategoryWorkout('full_body',state), lastPreferences ?? undefined)} onSetCount={sets=>setPlan(setPlanSetCount(plan,sets))} onEasier={index=>setPlan(scalePlanExercise(plan,index,-1,state))} onHarder={index=>setPlan(scalePlanExercise(plan,index,1,state))} onAdjust={(index,direction)=>setPlan(adjustPlanPrescription(plan,index,direction))} onSwap={index=>setPlan(swapPlanExercise(plan,index,state))} onReorder={(fromIndex,toIndex)=>setPlan(reorderPlanExercise(plan,fromIndex,toIndex))} onAdd={(groupIndex,exerciseId)=>setPlan(addPlanExercise(plan,groupIndex,exerciseId,state))} onRemove={index=>setPlan(removePlanExercise(plan,index))} onAvoid={avoidFromPlan}/>
   else if (view === 'library') content = <LibraryScreen state={state} onToggleFavourite={id => toggleList('favourites',id)} onToggleAvoid={id => toggleList('avoidList',id)} onCreateExercise={()=>{setCreateCustom(true);navigate('profile')}} onDeleteCustom={id=>setState(current=>({...current,customExercises:current.customExercises.filter(item=>item.id!==id)}))} onBuildSelected={ids=>showPlan(createManualWorkout(ids,state))}/>
   else if (view === 'saved') content = <SavedPlansScreen plans={state.savedPlans} onOpen={openSavedPlan} onRename={(id,name)=>setState(current=>({...current,savedPlans:current.savedPlans.map(item=>item.id===id?{...item,name:name.trim().slice(0,120)||item.name}:item)}))} onDelete={id=>setState(current=>({...current,savedPlans:current.savedPlans.filter(item=>item.id!==id)}))} onBuild={()=>navigate('builder')}/>
-  else if (view === 'progress') content = <ProgressScreen state={state} onProgression={(recommendation,response)=>setState(current=>respondToProgression(current,recommendation,response))} onUndoProgression={recommendation=>setState(current=>revertProgression(current,recommendation))}/>
-  else content = <ProfileScreen state={state} initialCreate={createCustom} onCreateOpened={()=>setCreateCustom(false)} onProfile={(profile: Profile) => setState(current => ({ ...current, profile }))} onReplaceState={setState} onResetData={resetAllData} onAddIssue={addIssue} onResolveIssue={id => setState(current => ({ ...current, issues: current.issues.map(issue => issue.id === id ? { ...issue, status:'resolved', resolvedAt:new Date().toISOString() } : issue) }))} onReopenIssue={id => setState(current => ({ ...current, issues:current.issues.map(issue => issue.id===id?{...issue,status:'active',resolvedAt:null}:issue) }))} onDeleteIssue={id => setState(current => ({...current,issues:current.issues.filter(issue=>issue.id!==id)}))} onSaveCustom={upsertCustom} onDeleteCustom={id => setState(current => ({ ...current, customExercises:current.customExercises.filter(item => item.id !== id) }))}/>
+  else if (view === 'progress') content = <ProgressScreen state={state} googleHealthStatus={googleHealthStatus} onProgression={(recommendation,response)=>setState(current=>respondToProgression(current,recommendation,response))} onUndoProgression={recommendation=>setState(current=>revertProgression(current,recommendation))}/>
+  else content = <ProfileScreen state={state} initialCreate={createCustom} onCreateOpened={()=>setCreateCustom(false)} googleHealth={{configured:isGoogleHealthConfigured(),connected:Boolean(googleHealthConnection),status:googleHealthStatus,onConnect:connectGoogleHealth,onDisconnect:disconnectFromGoogleHealth}} onProfile={(profile: Profile) => setState(current => ({ ...current, profile }))} onReplaceState={setState} onResetData={resetAllData} onAddIssue={addIssue} onResolveIssue={id => setState(current => ({ ...current, issues: current.issues.map(issue => issue.id === id ? { ...issue, status:'resolved', resolvedAt:new Date().toISOString() } : issue) }))} onReopenIssue={id => setState(current => ({ ...current, issues:current.issues.map(issue => issue.id===id?{...issue,status:'active',resolvedAt:null}:issue) }))} onDeleteIssue={id => setState(current => ({...current,issues:current.issues.filter(issue=>issue.id!==id)}))} onSaveCustom={upsertCustom} onDeleteCustom={id => setState(current => ({ ...current, customExercises:current.customExercises.filter(item => item.id !== id) }))}/>
 
   const visiblePlan=view==='plan'?plan:null
   const themeEffort=visiblePlan?.intention==='recover'?'standard':visiblePlan?.trainingEffort??state.trainingEffort

@@ -2,6 +2,7 @@ node_modules/
 dist/
 playwright-report/
 test-results/
+worker/wrangler.toml
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts

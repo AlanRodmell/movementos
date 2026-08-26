@@ -1,0 +1,12 @@
+name = "movementos-google-health"
+main = "google-health-broker.js"
+compatibility_date = "2026-08-26"
+
+[vars]
+GOOGLE_HEALTH_CLIENT_ID = "REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com"
+GOOGLE_HEALTH_REDIRECT_URI = "https://alanrodmell.github.io/movementos/oauth-callback.html"
+ALLOWED_ORIGINS = "https://alanrodmell.github.io,http://localhost:5173"
+
+# Add these with `wrangler secret put`; never commit their values:
+# GOOGLE_HEALTH_CLIENT_SECRET
+# TOKEN_ENCRYPTION_SECRET

@@ -3,13 +3,45 @@ import App from './App'
 import { defaultState, serializeLegacyState, STORAGE_KEY } from './storage/state'
 import type { ActiveSession, WorkoutPlan } from './domain/types'
 
-beforeEach(()=>{localStorage.clear();window.scrollTo=vi.fn()})
-afterEach(()=>vi.useRealTimers())
+const onboardedState={...defaultState,onboardingCompleted:true}
+
+beforeEach(()=>{localStorage.clear();localStorage.setItem(STORAGE_KEY,JSON.stringify(serializeLegacyState(onboardedState)));window.scrollTo=vi.fn()})
+afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks()})
 
 function submitDefaultBuilder() {
   for(let step=0;step<4;step+=1)fireEvent.click(screen.getByRole('button',{name:/continue/i}))
   fireEvent.click(screen.getByRole('button',{name:/generate my session/i}))
 }
+
+it('onboards a new local profile before opening the app',()=>{
+  localStorage.clear()
+  render(<App/>)
+  expect(screen.getByRole('heading',{name:'Train for the body you have today.'})).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button',{name:/Continue/}))
+  fireEvent.click(screen.getByRole('button',{name:/Continue/}))
+  fireEvent.click(screen.getByRole('checkbox'))
+  fireEvent.click(screen.getByRole('button',{name:/Finish setup/}))
+  expect(screen.getByRole('slider',{name:'Training effort'})).toBeInTheDocument()
+  expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).onboardingCompleted).toBe(true)
+})
+
+it('checks how the user is moving before generating today’s suggestion',()=>{
+  render(<App/>)
+  fireEvent.click(screen.getByRole('button',{name:/Start what’s best today/}))
+  expect(screen.getByRole('heading',{name:'How are you moving today?'})).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button',{name:/Create today’s session/}))
+  expect(screen.getByText(/selected because it is one of your freshest training areas today/i)).toBeInTheDocument()
+  expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).dailyCheckIn.date).toBe(new Date().toDateString())
+})
+
+it('shows a recoverable warning when local persistence fails',()=>{
+  const setItem=vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new DOMException('Quota exceeded','QuotaExceededError')})
+  render(<App/>)
+  expect(screen.getByRole('alert')).toHaveTextContent('Your changes are not being saved')
+  setItem.mockRestore()
+  fireEvent.click(screen.getByRole('button',{name:'Retry saving'}))
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
 
 it('persists Push It and snapshots it onto the next training plan',()=>{
   render(<App/>)
@@ -25,7 +57,7 @@ it('persists Push It and snapshots it onto the next training plan',()=>{
 
 it('resets a previous-day training effort to Standard',()=>{
   vi.useFakeTimers();vi.setSystemTime(new Date(2026,7,24,9))
-  localStorage.setItem(STORAGE_KEY,JSON.stringify({...serializeLegacyState(defaultState),trainingEffort:'push',trainingEffortDate:'2026-08-23'}))
+  localStorage.setItem(STORAGE_KEY,JSON.stringify({...serializeLegacyState(onboardedState),trainingEffort:'push',trainingEffortDate:'2026-08-23'}))
   render(<App/>)
 
   expect(screen.getByRole('slider',{name:'Training effort'})).toHaveValue('1')
@@ -35,7 +67,7 @@ it('resets a previous-day training effort to Standard',()=>{
 
 it('resets training effort at local midnight while the app remains open',()=>{
   vi.useFakeTimers();vi.setSystemTime(new Date(2026,7,24,23,59,59))
-  localStorage.setItem(STORAGE_KEY,JSON.stringify({...serializeLegacyState(defaultState),trainingEffort:'easy',trainingEffortDate:'2026-08-24'}))
+  localStorage.setItem(STORAGE_KEY,JSON.stringify({...serializeLegacyState(onboardedState),trainingEffort:'easy',trainingEffortDate:'2026-08-24'}))
   render(<App/>)
 
   expect(screen.getByRole('slider',{name:'Training effort'})).toHaveValue('0')
@@ -85,7 +117,7 @@ it('resumes a persisted session, records review data, and transitions into Progr
   vi.useFakeTimers();vi.setSystemTime(new Date('2026-08-19T12:00:00Z'))
   const plan:WorkoutPlan={id:'journey',name:'Journey',intention:'train',goal:'general',durationMinutes:1,targetDurationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['chest'],insights:[],exercises:[{exerciseId:'x001',prescription:'8 reps',durationSeconds:1,rationale:'Test',section:'Main work',setNumber:1,totalSets:1}]}
   const activeSession:ActiveSession={plan,index:0,phase:'work',remainingSeconds:1,running:true,deadlineAt:Date.now()+1000,startedAt:Date.now()-30_000,completedExerciseIds:[]}
-  localStorage.setItem(STORAGE_KEY,JSON.stringify(serializeLegacyState({...defaultState,activeSession})))
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(serializeLegacyState({...onboardedState,activeSession})))
   render(<App/>)
   fireEvent.click(screen.getByRole('button',{name:/Resume/}))
   expect(screen.queryByRole('navigation',{name:'Primary navigation'})).not.toBeInTheDocument()

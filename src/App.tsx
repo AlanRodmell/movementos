@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Shell, type View } from './components/Shell'
+import { StorageWarning } from './components/StorageWarning'
 import { addPlanExercise, adjustPlanPrescription, applySessionCompletion, avoidPlanExercise, createManualWorkout, generateCategoryWorkout, generateFreshWorkout, generateWorkout, getAreaLoadBreakdown, getDailyRecommendation, removePlanExercise, reorderPlanExercise, scalePlanExercise, setPlanSetCount, swapPlanExercise } from './domain/engine'
-import type { ActiveSession, AppState, BuilderPreferences, Exercise, MuscleArea, Profile, TrainingEffort, WorkoutPlan, WorkoutSession } from './domain/types'
+import type { ActiveSession, AppState, BuilderPreferences, DailyCheckIn, Exercise, MuscleArea, Profile, TrainingEffort, WorkoutPlan, WorkoutSession } from './domain/types'
 import { HomeScreen } from './screens/HomeScreen'
 import { BuilderScreen } from './screens/BuilderScreen'
 import { PlanScreen } from './screens/PlanScreen'
@@ -10,12 +11,14 @@ import { PlayerScreen } from './screens/PlayerScreen'
 import { ProgressScreen } from './screens/ProgressScreen'
 import { ProfileScreen } from './screens/ProfileScreen'
 import { SavedPlansScreen } from './screens/SavedPlansScreen'
-import { defaultState, loadState, localDateKey, saveState } from './storage/state'
+import { SuggestedCheckInScreen } from './screens/SuggestedCheckInScreen'
+import { OnboardingScreen } from './screens/OnboardingScreen'
+import { defaultState, downloadBackup, loadState, localDateKey, saveState } from './storage/state'
 import { recordProfileSignal, respondToProgression, revertProgression } from './domain/learning'
 import { unlockWorkoutAudio } from './audio/workoutAudio'
 import './styles.css'
 
-const titles: Record<View,string> = { home: 'Home', builder: 'Build a session', plan: 'Your session', library: 'Exercise library', saved:'Saved workouts', player: 'Active session', progress: 'Progress', profile: 'Profile' }
+const titles: Record<View,string> = { home: 'Home', checkin:'Daily check-in', builder: 'Build a session', plan: 'Your session', library: 'Exercise library', saved:'Saved workouts', player: 'Active session', progress: 'Progress', profile: 'Profile' }
 
 export default function App() {
   const [state, setState] = useState<AppState>(() => loadState())
@@ -24,7 +27,8 @@ export default function App() {
   const [plan, setPlan] = useState<WorkoutPlan | null>(null)
   const [lastPreferences, setLastPreferences] = useState<BuilderPreferences | null>(null)
   const [createCustom,setCreateCustom]=useState(false)
-  useEffect(() => { saveState(state) }, [state])
+  const [storageError,setStorageError]=useState(false)
+  useEffect(() => { setStorageError(!saveState(state)) }, [state])
   useEffect(() => {
     const now=new Date()
     const nextDay=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1)
@@ -35,9 +39,11 @@ export default function App() {
   const navigate = (next: View) => { if (next !== view) setHistory(current => [...current, view]); setView(next); window.scrollTo(0,0) }
   const goBack = () => { const copy = [...history]; const target = copy.pop() ?? 'home'; setHistory(copy); setView(target); window.scrollTo(0,0) }
   const showPlan = (nextPlan: WorkoutPlan, preferences?: BuilderPreferences) => { setPlan(nextPlan); if (preferences) setLastPreferences(preferences); navigate('plan') }
-  const suggested = () => {
-    const recommendation=getDailyRecommendation(state)
-    const generated=generateWorkout(recommendation.preferences,state)
+  const suggested = (dailyCheckIn:DailyCheckIn) => {
+    const nextState={...state,dailyCheckIn}
+    setState(nextState)
+    const recommendation=getDailyRecommendation(nextState)
+    const generated=generateWorkout(recommendation.preferences,nextState)
     showPlan({...generated,insights:[recommendation.reason,...generated.insights]},recommendation.preferences)
   }
   const category = (area: MuscleArea) => showPlan(generateCategoryWorkout(area, state))
@@ -62,12 +68,15 @@ export default function App() {
     setState(structuredClone(defaultState));setPlan(null);setLastPreferences(null);setCreateCustom(false);setHistory([]);setView('home');window.scrollTo(0,0)
   }
 
-  if (view === 'player' && state.activeSession) return <PlayerScreen session={state.activeSession} state={state} customExercises={state.customExercises} soundEnabled={state.profile.soundEnabled} waitBetweenExercises={state.profile.waitBetweenExercises} areaLoadBefore={getAreaLoadBreakdown(state)} onProgress={persistSession} onComplete={complete} onCreateIssue={addIssue} onExit={() => { setState(current => ({ ...current, activeSession:null })); setHistory([]); setView('home') }}/>
+  const storageWarning=storageError?<StorageWarning onExport={()=>downloadBackup(state)} onRetry={()=>setStorageError(!saveState(state))}/>:null
+  if(!state.onboardingCompleted)return <>{storageWarning}<OnboardingScreen profile={state.profile} onComplete={profile=>setState(current=>({...current,profile,onboardingCompleted:true}))}/></>
+  if (view === 'player' && state.activeSession) return <>{storageWarning}<PlayerScreen session={state.activeSession} state={state} customExercises={state.customExercises} soundEnabled={state.profile.soundEnabled} waitBetweenExercises={state.profile.waitBetweenExercises} areaLoadBefore={getAreaLoadBreakdown(state)} onProgress={persistSession} onComplete={complete} onCreateIssue={addIssue} onExit={() => { setState(current => ({ ...current, activeSession:null })); setHistory([]); setView('home') }}/></>
 
   let content: React.ReactNode
   const openSavedPlan=(index:number)=>{const savedPlan=state.savedPlans[index];if(savedPlan)showPlan(savedPlan)}
   const planIsSaved=Boolean(plan&&state.savedPlans.some(saved=>saved.id===plan.id&&JSON.stringify(saved.exercises)===JSON.stringify(plan.exercises)))
-  if (view === 'home') content = <HomeScreen state={state} onTrainingEffort={(trainingEffort:TrainingEffort)=>setState(current=>({...current,trainingEffort,trainingEffortDate:localDateKey()}))} onBuild={() => navigate('builder')} onSuggested={suggested} onCategory={category} onResume={() => { setPlan(state.activeSession?.plan ?? null); navigate('player') }} onOpenPlan={openSavedPlan} onViewSaved={()=>navigate('saved')}/>
+  if (view === 'home') content = <HomeScreen state={state} onTrainingEffort={(trainingEffort:TrainingEffort)=>setState(current=>({...current,trainingEffort,trainingEffortDate:localDateKey()}))} onBuild={() => navigate('builder')} onSuggested={()=>navigate('checkin')} onCategory={category} onResume={() => { setPlan(state.activeSession?.plan ?? null); navigate('player') }} onOpenPlan={openSavedPlan} onViewSaved={()=>navigate('saved')}/>
+  else if(view==='checkin')content=<SuggestedCheckInScreen dailyCheckIn={state.dailyCheckIn} onSubmit={suggested}/>
   else if (view === 'builder') content = <BuilderScreen profile={state.profile} dailyCheckIn={state.dailyCheckIn} onCheckIn={dailyCheckIn => setState(current => ({ ...current,dailyCheckIn }))} onGenerate={preferences => showPlan(generateFreshWorkout(preferences, state, plan), preferences)}/>
   else if (view === 'plan' && plan) content = <PlanScreen plan={plan} customExercises={state.customExercises} isSaved={planIsSaved} onStart={startPlan} onSave={() => setState(current => ({ ...current, savedPlans: [plan, ...current.savedPlans.filter(item => item.id !== plan.id)].slice(0,50) }))} onViewSaved={()=>navigate('saved')} onRegenerate={() => showPlan(lastPreferences ? generateFreshWorkout(lastPreferences,state,plan) : generateCategoryWorkout('full_body',state), lastPreferences ?? undefined)} onSetCount={sets=>setPlan(setPlanSetCount(plan,sets))} onEasier={index=>setPlan(scalePlanExercise(plan,index,-1,state))} onHarder={index=>setPlan(scalePlanExercise(plan,index,1,state))} onAdjust={(index,direction)=>setPlan(adjustPlanPrescription(plan,index,direction))} onSwap={index=>setPlan(swapPlanExercise(plan,index,state))} onReorder={(fromIndex,toIndex)=>setPlan(reorderPlanExercise(plan,fromIndex,toIndex))} onAdd={(groupIndex,exerciseId)=>setPlan(addPlanExercise(plan,groupIndex,exerciseId,state))} onRemove={index=>setPlan(removePlanExercise(plan,index))} onAvoid={avoidFromPlan}/>
   else if (view === 'library') content = <LibraryScreen state={state} onToggleFavourite={id => toggleList('favourites',id)} onToggleAvoid={id => toggleList('avoidList',id)} onCreateExercise={()=>{setCreateCustom(true);navigate('profile')}} onDeleteCustom={id=>setState(current=>({...current,customExercises:current.customExercises.filter(item=>item.id!==id)}))} onBuildSelected={ids=>showPlan(createManualWorkout(ids,state))}/>
@@ -77,5 +86,5 @@ export default function App() {
 
   const visiblePlan=view==='plan'?plan:null
   const themeEffort=visiblePlan?.intention==='recover'?'standard':visiblePlan?.trainingEffort??state.trainingEffort
-  return <Shell view={view} title={titles[view]} trainingEffort={themeEffort} effortPaused={visiblePlan?.intention==='recover'} onNavigate={navigate} onBack={goBack}>{content}</Shell>
+  return <Shell view={view} title={titles[view]} trainingEffort={themeEffort} effortPaused={visiblePlan?.intention==='recover'} onNavigate={navigate} onBack={goBack}>{storageWarning}{content}</Shell>
 }

@@ -8,6 +8,7 @@ describe('state migration', () => {
       workoutHistory:[{ id:'old',date:'2025-01-01T10:00:00Z',name:'Old workout',durationSeconds:600,rating:'good',intention:'workout',exercises:[{id:'u1',name:'Push-Ups',reps:'10 reps',secs:45}] }],
     })
     expect(state.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(state.onboardingCompleted).toBe(true)
     expect(state.profile.goal).toBe('muscle')
     expect(state.profile.favourites).toEqual(['u1'])
     expect(state.history[0].completedExerciseIds).toEqual(['u1'])
@@ -30,6 +31,7 @@ describe('state migration', () => {
     expect(stored.customExercises).toEqual({})
     expect(stored.learningModel).toEqual(defaultState.learningModel)
     expect(stored.trainingEffort).toBe('push')
+    expect(stored.onboardingCompleted).toBe(false)
     expect(normaliseState(stored).trainingEffort).toBe('push')
   })
 

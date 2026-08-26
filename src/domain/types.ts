@@ -349,6 +349,7 @@ export interface BuilderPreferences {
 
 export interface AppState {
   schemaVersion: number
+  onboardingCompleted: boolean
   trainingEffort: TrainingEffort
   trainingEffortDate: string | null
   profile: Profile

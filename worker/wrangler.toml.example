@@ -1,6 +1,8 @@
 name = "movementos-google-health"
 main = "google-health-broker.js"
 compatibility_date = "2026-08-26"
+workers_dev = true
+preview_urls = false
 
 [vars]
 GOOGLE_HEALTH_CLIENT_ID = "REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com"

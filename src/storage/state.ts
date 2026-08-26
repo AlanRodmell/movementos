@@ -7,6 +7,7 @@ export const SCHEMA_VERSION = 11
 
 export const defaultState: AppState = {
   schemaVersion: SCHEMA_VERSION,
+  onboardingCompleted: false,
   trainingEffort: 'standard',
   trainingEffortDate: null,
   profile: {
@@ -171,6 +172,8 @@ export function normaliseState(value: unknown): AppState {
   const effortIsCurrent=storedEffortDate===localDateKey()
   return {
     schemaVersion: SCHEMA_VERSION,
+    // Existing v11 installs pre-date onboarding and should not be interrupted.
+    onboardingCompleted: typeof raw.onboardingCompleted === 'boolean' ? raw.onboardingCompleted : true,
     trainingEffort: effortIsCurrent&&trainingEfforts.includes(raw.trainingEffort as TrainingEffort) ? raw.trainingEffort as TrainingEffort : 'standard',
     trainingEffortDate: effortIsCurrent ? storedEffortDate : null,
     profile: {
@@ -209,7 +212,7 @@ export function serializeLegacyState(state: AppState) {
     category: exercise.category, equipment: exercise.equipment, primaryMuscles: exercise.primaryMuscles, unilateral: exercise.unilateral, lowImpact: exercise.lowImpact, goals: exercise.goals, contraindications: exercise.contraindications,
   }]))
   return {
-    schemaVersion: SCHEMA_VERSION, trainingEffort:state.trainingEffort, trainingEffortDate:state.trainingEffortDate, dailyCheckIn:state.dailyCheckIn,
+    schemaVersion: SCHEMA_VERSION, onboardingCompleted:state.onboardingCompleted, trainingEffort:state.trainingEffort, trainingEffortDate:state.trainingEffortDate, dailyCheckIn:state.dailyCheckIn,
     profile: { height:state.profile.height, weight:state.profile.weight, heightUnit:state.profile.heightUnit, weightUnit:state.profile.weightUnit, trainingGoal:state.profile.goal, upper:state.profile.upper, lower:state.profile.lower, core:state.profile.core, conditioning:state.profile.conditioning, unlocks:{ advancedBridges:state.profile.advancedBridges }, soundEnabled:state.profile.soundEnabled, waitBetweenExercises:state.profile.waitBetweenExercises, avoidList:state.profile.avoidList, alwaysInclude:state.profile.favourites, name:state.profile.name, level:state.profile.level, goal:state.profile.goal, equipment:state.profile.equipment, favourites:state.profile.favourites },
     rotation:state.rotation, history:state.legacyHistory,
     workoutHistory: state.history.map(session => ({ id:session.id, date:session.date, name:session.planName, durationSeconds:session.durationSeconds, plannedExercises:session.exercises.length, completedExercises:session.completedExerciseIds.length, rating:session.rating, focus:session.focus, intention:session.intention === 'recover' ? 'recovery' : 'workout', goal:session.goal, trainingEffort:session.trainingEffort, completedExerciseIds:session.completedExerciseIds, exercises:session.exercises.map(exercise => ({ id:exercise.id, name:exercise.name, family:null, reps:exercise.prescription, detail:'', secs:exercise.durationSeconds,plannedAppearances:exercise.plannedAppearances,completedAppearances:exercise.completedAppearances,skippedAppearances:exercise.skippedAppearances,adjusted:exercise.adjusted,swapped:exercise.swapped,feedback:exercise.feedback,performance:exercise.performance })) , areaLoadBefore:session.areaLoadBefore,actions:session.actions,balanceReport:session.balanceReport,planStructure:session.planStructure })),

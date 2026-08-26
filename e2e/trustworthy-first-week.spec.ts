@@ -1,0 +1,49 @@
+import { expect,test } from '@playwright/test'
+
+test('a new user safely reaches a personalised session on mobile',async({page})=>{
+  await page.goto('/')
+  await expect(page.getByRole('heading',{name:'Train for the body you have today.'})).toBeVisible()
+  await page.getByLabel(/Name/).fill('Alex')
+  await page.getByRole('button',{name:/Strength/}).click()
+  await page.getByRole('button',{name:/Continue/}).click()
+  await page.getByRole('button',{name:/Experienced/}).click()
+  await page.getByRole('button',{name:'Dumbbells'}).click()
+  await page.getByRole('button',{name:/Continue/}).click()
+  await expect(page.getByRole('button',{name:/Finish setup/})).toBeDisabled()
+  await page.getByRole('checkbox').check()
+  await page.getByRole('button',{name:/Finish setup/}).click()
+
+  await expect(page.getByRole('heading',{name:'Good to see you, Alex.'})).toBeVisible()
+  await expect(page.locator('main.app-main')).toBeFocused()
+  await page.getByRole('button',{name:/Start what’s best today/}).click()
+  await expect(page.getByRole('heading',{name:'How are you moving today?'})).toBeVisible()
+  await expect(page.locator('main.app-main')).toBeFocused()
+  await page.getByRole('button',{name:/Upper body/}).click()
+  await page.getByRole('button',{name:'Shoulders'}).click()
+  await page.getByRole('button',{name:/Create today’s session/}).click()
+
+  await expect(page.getByText('Training effort paused').first()).toBeVisible()
+  await page.getByText('Why this session?').click()
+  await expect(page.getByText(/Recovery selected from today’s check-in for shoulders/)).toBeVisible()
+  await page.getByRole('button',{name:/^Start session/}).click()
+  await expect(page.getByRole('heading',{name:'Workout begins in'})).toBeVisible()
+})
+
+test('a persisted session resumes, records feedback, and completes',async({page})=>{
+  await page.addInitScript(()=>{
+    const plan={id:'e2e-resume',name:'Resume journey',intention:'train',goal:'general',durationMinutes:1,targetDurationMinutes:1,createdAt:new Date().toISOString(),focusAreas:['chest'],insights:[],exercises:[{exerciseId:'x001',prescription:'8 reps',durationSeconds:1,rationale:'Test journey',section:'Main work',setNumber:1,totalSets:1}]}
+    localStorage.setItem('movementos:state',JSON.stringify({schemaVersion:11,onboardingCompleted:true,profile:{name:'Alex',goal:'general',level:2,upper:2,lower:2,core:2,conditioning:2,equipment:['none','wall','chair'],soundEnabled:false,waitBetweenExercises:true},activeSession:{plan,index:0,phase:'work',remainingSeconds:0,running:false,deadlineAt:null,startedAt:Date.now()-30_000,completedExerciseIds:[]}}))
+  })
+  await page.goto('/')
+  await page.getByRole('button',{name:/Resume/}).click()
+  await expect(page.getByText('8 reps')).toBeVisible()
+  await page.getByRole('button',{name:/Complete session/}).click()
+  await expect(page.getByRole('heading',{name:'How did each movement fit?'})).toBeVisible()
+  await page.getByRole('button',{name:'Good fit'}).click()
+  await page.getByText('Record achieved reps, time or load').click()
+  await page.getByRole('textbox',{name:/achieved reps/}).fill('9')
+  await page.getByRole('button',{name:/Continue to overall rating/}).click()
+  await page.getByRole('button',{name:/good$/}).click()
+  await expect(page.getByRole('heading',{name:'Progress is the work repeated.'})).toBeVisible()
+  await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('movementos:state')!).activeSession)).toBeNull()
+})

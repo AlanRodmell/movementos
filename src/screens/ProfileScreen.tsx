@@ -1,63 +1,727 @@
-import { useEffect, useRef, useState } from 'react'
-import { BodyAreaPicker } from '../components/BodyAreaPicker'
-import { SafetyNotice } from '../components/SafetyNotice'
-import { catalogueStats } from '../data/exercises'
-import { bodyAreaLabel, selectableBodyAreas } from '../data/bodyAreas'
-import { downloadBackup, downloadHistoryCsv, normaliseState } from '../storage/state'
-import type { AppState, Category, Equipment, Exercise, Goal, MuscleArea, Profile } from '../domain/types'
-import type { GoogleHealthStatus } from '../integrations/googleHealth'
+import { useEffect, useRef, useState } from "react";
+import { BodyAreaPicker } from "../components/BodyAreaPicker";
+import { CoachPanel } from "../components/CoachPanel";
+import { SafetyNotice } from "../components/SafetyNotice";
+import { catalogueStats } from "../data/exercises";
+import { bodyAreaLabel, selectableBodyAreas } from "../data/bodyAreas";
+import {
+  downloadBackup,
+  downloadHistoryCsv,
+  normaliseState,
+} from "../storage/state";
+import type {
+  AppState,
+  Category,
+  Equipment,
+  Exercise,
+  Goal,
+  MuscleArea,
+  Profile,
+} from "../domain/types";
+import type { GoogleHealthStatus } from "../integrations/googleHealth";
 
-const equipmentOptions: Equipment[] = ['none','wall','chair','bench','table','bar','bands','dumbbells','kettlebell','barbell','cable','machine','slider','box','rope']
-const customExerciseAreas:MuscleArea[]=[...new Set<MuscleArea>(['upper_body','lower_body','full_body','mind',...selectableBodyAreas])]
+const equipmentOptions: Equipment[] = [
+  "none",
+  "wall",
+  "chair",
+  "bench",
+  "table",
+  "bar",
+  "bands",
+  "dumbbells",
+  "kettlebell",
+  "barbell",
+  "cable",
+  "machine",
+  "slider",
+  "box",
+  "rope",
+];
+const customExerciseAreas: MuscleArea[] = [
+  ...new Set<MuscleArea>([
+    "upper_body",
+    "lower_body",
+    "full_body",
+    "mind",
+    ...selectableBodyAreas,
+  ]),
+];
 
-const customCategories: Category[] = ['upper','lower','core','conditioning','mobility','stretching','mindfulness']
-const categoryPrefix: Record<string,string> = { upper:'u', lower:'l', core:'k', conditioning:'c', mobility:'m', stretching:'m', mindfulness:'b' }
-const blankCustom = ():Exercise => ({ id:'', name:'', description:'', category:'upper', pattern:'custom', level:2, durationSeconds:30, prescription:'10 reps', equipment:['none'], primaryMuscles:['upper_body'], secondaryMuscles:[], unilateral:false, lowImpact:true, goals:['general'], contraindications:[], isCustom:true })
+const customCategories: Category[] = [
+  "upper",
+  "lower",
+  "core",
+  "conditioning",
+  "mobility",
+  "stretching",
+  "mindfulness",
+];
+const categoryPrefix: Record<string, string> = {
+  upper: "u",
+  lower: "l",
+  core: "k",
+  conditioning: "c",
+  mobility: "m",
+  stretching: "m",
+  mindfulness: "b",
+};
+const blankCustom = (): Exercise => ({
+  id: "",
+  name: "",
+  description: "",
+  category: "upper",
+  pattern: "custom",
+  level: 2,
+  durationSeconds: 30,
+  prescription: "10 reps",
+  equipment: ["none"],
+  primaryMuscles: ["upper_body"],
+  secondaryMuscles: [],
+  unilateral: false,
+  lowImpact: true,
+  goals: ["general"],
+  contraindications: [],
+  isCustom: true,
+});
 
 interface ProfileScreenProps {
-  state: AppState
-  initialCreate?: boolean
-  onCreateOpened?: () => void
-  googleHealth?: { configured:boolean; connected:boolean; status:GoogleHealthStatus; onConnect:()=>void; onDisconnect:()=>void }
-  onProfile: (profile: Profile) => void
-  onReplaceState: (state: AppState) => void
-  onResetData: () => void
-  onAddIssue: (area: MuscleArea, severity: 'mild'|'moderate'|'flare', side:'left'|'right'|'bilateral', note: string) => void
-  onResolveIssue: (id: string) => void
-  onReopenIssue: (id: string) => void
-  onDeleteIssue: (id: string) => void
-  onSaveCustom: (exercise: Exercise) => void
-  onDeleteCustom: (id: string) => void
+  state: AppState;
+  initialCreate?: boolean;
+  onCreateOpened?: () => void;
+  googleHealth?: {
+    configured: boolean;
+    connected: boolean;
+    status: GoogleHealthStatus;
+    onConnect: () => void;
+    onDisconnect: () => void;
+  };
+  onProfile: (profile: Profile) => void;
+  onReplaceState: (state: AppState) => void;
+  onResetData: () => void;
+  onAddIssue: (
+    area: MuscleArea,
+    severity: "mild" | "moderate" | "flare",
+    side: "left" | "right" | "bilateral",
+    note: string,
+  ) => void;
+  onResolveIssue: (id: string) => void;
+  onReopenIssue: (id: string) => void;
+  onDeleteIssue: (id: string) => void;
+  onSaveCustom: (exercise: Exercise) => void;
+  onDeleteCustom: (id: string) => void;
 }
 
-export function ProfileScreen({ state, initialCreate=false, onCreateOpened, googleHealth, onProfile, onReplaceState, onResetData, onAddIssue, onResolveIssue, onReopenIssue, onDeleteIssue, onSaveCustom, onDeleteCustom }: ProfileScreenProps) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [issueArea, setIssueArea] = useState<MuscleArea>('shoulders')
-  const [severity, setSeverity] = useState<'mild'|'moderate'|'flare'>('mild')
-  const [side,setSide]=useState<'left'|'right'|'bilateral'>('bilateral')
-  const [note, setNote] = useState('')
-  const [editing, setEditing] = useState<Exercise | null>(()=>initialCreate?blankCustom():null)
-  const [showCustom, setShowCustom] = useState(initialCreate)
-  useEffect(()=>{if(initialCreate)onCreateOpened?.()},[initialCreate,onCreateOpened])
-  const update = <K extends keyof Profile>(key: K, value: Profile[K]) => onProfile({ ...state.profile, [key]: value })
-  const toggleEquipment = (item: Equipment) => update('equipment', state.profile.equipment.includes(item) ? state.profile.equipment.filter(value => value !== item) : [...state.profile.equipment, item])
-  const importBackup = (file?: File) => { if (!file || file.size > 5_000_000) return; const reader = new FileReader(); reader.onload = () => { try { onReplaceState(normaliseState(JSON.parse(String(reader.result)))) } catch { alert('That backup could not be read.') } }; reader.readAsText(file) }
-  const openCustom = (exercise?: Exercise) => { setEditing(exercise ? { ...exercise } : blankCustom()); setShowCustom(true) }
+export function ProfileScreen({
+  state,
+  initialCreate = false,
+  onCreateOpened,
+  googleHealth,
+  onProfile,
+  onReplaceState,
+  onResetData,
+  onAddIssue,
+  onResolveIssue,
+  onReopenIssue,
+  onDeleteIssue,
+  onSaveCustom,
+  onDeleteCustom,
+}: ProfileScreenProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [issueArea, setIssueArea] = useState<MuscleArea>("shoulders");
+  const [severity, setSeverity] = useState<"mild" | "moderate" | "flare">(
+    "mild",
+  );
+  const [side, setSide] = useState<"left" | "right" | "bilateral">("bilateral");
+  const [note, setNote] = useState("");
+  const [editing, setEditing] = useState<Exercise | null>(() =>
+    initialCreate ? blankCustom() : null,
+  );
+  const [showCustom, setShowCustom] = useState(initialCreate);
+  useEffect(() => {
+    if (initialCreate) onCreateOpened?.();
+  }, [initialCreate, onCreateOpened]);
+  const update = <K extends keyof Profile>(key: K, value: Profile[K]) =>
+    onProfile({ ...state.profile, [key]: value });
+  const toggleEquipment = (item: Equipment) =>
+    update(
+      "equipment",
+      state.profile.equipment.includes(item)
+        ? state.profile.equipment.filter((value) => value !== item)
+        : [...state.profile.equipment, item],
+    );
+  const importBackup = (file?: File) => {
+    if (!file || file.size > 5_000_000) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        onReplaceState(normaliseState(JSON.parse(String(reader.result))));
+      } catch {
+        alert("That backup could not be read.");
+      }
+    };
+    reader.readAsText(file);
+  };
+  const openCustom = (exercise?: Exercise) => {
+    setEditing(exercise ? { ...exercise } : blankCustom());
+    setShowCustom(true);
+  };
   const saveCustom = () => {
-    if (!editing?.name.trim()) return
-    const id = editing.id || `${categoryPrefix[editing.category] ?? 'u'}_custom_${Date.now()}`
-    onSaveCustom({ ...editing, id, name:editing.name.trim().slice(0,120), description:editing.description.trim().slice(0,600) || 'Custom exercise.', pattern:editing.pattern.trim().replace(/\W+/g,'_').slice(0,80) || 'custom', durationSeconds:Math.max(1,Math.min(3600,editing.durationSeconds)), prescription:editing.prescription.trim().slice(0,80) || '10 reps', videoUrl:editing.videoUrl?.trim().slice(0,1000), isCustom:true })
-    setShowCustom(false); setEditing(null)
-  }
-  return <div className="screen profile-screen">
-    <section className="page-intro"><span className="eyebrow">PERSONALISE THE ENGINE</span><h1>Your training profile</h1><p>These defaults influence every generated session and quick-start recommendation.</p></section>
-    <section className="panel form-panel"><label>Name<input value={state.profile.name} placeholder="What should we call you?" onChange={event => update('name', event.target.value.slice(0,80))}/></label><label>Primary goal<select value={state.profile.goal} onChange={event => update('goal', event.target.value as Goal)}>{['general','strength','muscle','endurance','mobility'].map(goal => <option key={goal}>{goal}</option>)}</select></label><div className="section-heading"><h2>Movement levels</h2><span>Used independently by the coach</span></div><div className="level-grid">{(['upper','lower','core','conditioning'] as const).map(area=><label key={area}>{area}<select value={state.profile[area]} onChange={event=>update(area,Number(event.target.value) as Profile[typeof area])}>{[1,2,3,4,5].map(value=><option key={value} value={value}>Level {value}</option>)}</select></label>)}</div></section>
-    <section className="panel"><div className="section-heading"><h2>Your equipment</h2><span>{state.profile.equipment.length} selected</span></div><div className="filter-pills">{equipmentOptions.map(item => <button key={item} className={state.profile.equipment.includes(item) ? 'selected' : ''} onClick={() => toggleEquipment(item)}>{item}</button>)}</div></section>
-    <section className="panel"><div className="section-heading"><h2>Issues & adjustments</h2><span>{state.issues.filter(issue => issue.status === 'active').length} active</span></div><p>Active issues reduce affected prescriptions. Flare-ups exclude movements that load the selected muscle, joint, hand, or foot.</p><SafetyNotice compact/>{state.issues.filter(issue => issue.status === 'active').map(issue => <div className="issue-row" key={issue.id}><div><strong>{bodyAreaLabel(issue.area)} · {issue.side}</strong><small>{issue.severity}{issue.note ? ` · ${issue.note}` : ''}</small></div><div className="inline-actions"><button onClick={() => onResolveIssue(issue.id)}>Resolve</button><button className="danger-text" onClick={()=>confirm('Delete this issue?')&&onDeleteIssue(issue.id)}>Delete</button></div></div>)}<div className="issue-area-editor"><strong>Where is the issue?</strong><BodyAreaPicker value={[issueArea]} multiple={false} onChange={areas=>areas[0]&&setIssueArea(areas[0])}/></div><div className="issue-form"><select aria-label="Issue severity" value={severity} onChange={event => setSeverity(event.target.value as typeof severity)}><option value="mild">Mild</option><option value="moderate">Moderate</option><option value="flare">Flare-up</option></select><select aria-label="Issue side" value={side} onChange={event=>setSide(event.target.value as typeof side)}><option value="bilateral">Both / centre</option><option value="left">Left</option><option value="right">Right</option></select><input value={note} onChange={event => setNote(event.target.value)} placeholder="Optional note"/><button className="secondary" onClick={() => { onAddIssue(issueArea,severity,side,note); setNote('') }}>Add {bodyAreaLabel(issueArea)} issue</button></div>{state.issues.some(issue=>issue.status==='resolved')&&<details className="resolved-issues"><summary>Resolved issues ({state.issues.filter(issue=>issue.status==='resolved').length})</summary>{state.issues.filter(issue=>issue.status==='resolved').map(issue=><div className="issue-row" key={issue.id}><div><strong>{bodyAreaLabel(issue.area)}</strong><small>{issue.side} · {issue.severity}</small></div><div className="inline-actions"><button onClick={()=>onReopenIssue(issue.id)}>Reopen</button><button className="danger-text" onClick={()=>onDeleteIssue(issue.id)}>Delete</button></div></div>)}</details>}</section>
-    <section className="panel"><div className="section-heading"><h2>Playback</h2></div><label className="toggle-row"><span><strong>Countdown sounds</strong><small>Audio cues during timed work and rest</small></span><input type="checkbox" checked={state.profile.soundEnabled} onChange={event => update('soundEnabled', event.target.checked)}/></label><label className="toggle-row"><span><strong>Wait for me between exercises</strong><small>Log each movement before its timed rest begins</small></span><input type="checkbox" checked={state.profile.waitBetweenExercises} onChange={event => update('waitBetweenExercises', event.target.checked)}/></label><label className="toggle-row"><span><strong>Advanced bridges</strong><small>Opt into higher-risk spinal extension</small></span><input type="checkbox" checked={state.profile.advancedBridges} onChange={event => update('advancedBridges', event.target.checked)}/></label></section>
-    <section className="panel"><div className="section-heading"><h2>Custom exercises</h2><button className="secondary compact" onClick={() => openCustom()}>+ Create</button></div>{state.customExercises.length === 0 ? <p>Create movements with your own coaching notes, equipment, level, and prescription.</p> : state.customExercises.map(exercise => <div className="issue-row" key={exercise.id}><div><strong>{exercise.name}</strong><small>{exercise.category} · {exercise.prescription}</small></div><div className="inline-actions"><button onClick={() => openCustom(exercise)}>Edit</button><button className="danger-text" onClick={() => confirm(`Delete ${exercise.name}?`) && onDeleteCustom(exercise.id)}>Delete</button></div></div>)}</section>
-    {showCustom && editing && <section className="panel form-panel custom-editor"><div className="section-heading"><h2>{editing.id ? 'Edit' : 'Create'} exercise</h2><button className="text-button" onClick={() => setShowCustom(false)}>Cancel</button></div><label>Name<input value={editing.name} onChange={event => setEditing({ ...editing, name:event.target.value })} placeholder="My movement"/></label><label>Category<select value={editing.category} onChange={event => setEditing({ ...editing, category:event.target.value as Category })}>{customCategories.map(item => <option key={item}>{item}</option>)}</select></label><label>Primary area<select value={editing.primaryMuscles[0]} onChange={event => setEditing({ ...editing, primaryMuscles:[event.target.value as MuscleArea] })}>{customExerciseAreas.map(item => <option key={item} value={item}>{bodyAreaLabel(item)}</option>)}</select></label><label>Pattern<input value={editing.pattern} onChange={event => setEditing({ ...editing, pattern:event.target.value })} placeholder="push, hinge, carry…"/></label><label>Level<select value={editing.level} onChange={event => setEditing({ ...editing, level:Number(event.target.value) as Exercise['level'] })}>{[1,2,3,4,5].map(item => <option key={item}>{item}</option>)}</select></label><label>Equipment<select value={editing.equipment[0]} onChange={event => setEditing({ ...editing, equipment:[event.target.value as Equipment] })}>{equipmentOptions.map(item => <option key={item}>{item}</option>)}</select></label><label>Prescription<input value={editing.prescription} onChange={event => setEditing({ ...editing, prescription:event.target.value })} placeholder="10 reps or 30 sec"/></label><label>Estimated duration (seconds)<input type="number" min="1" max="3600" value={editing.durationSeconds} onChange={event => setEditing({ ...editing, durationSeconds:Number(event.target.value) })}/></label><label>Video link (optional)<input type="url" value={editing.videoUrl??''} onChange={event=>setEditing({...editing,videoUrl:event.target.value})} placeholder="https://…"/></label><label>Coaching notes<textarea value={editing.description} onChange={event => setEditing({ ...editing, description:event.target.value })} placeholder="Technique and setup cues"/></label><button className="primary" onClick={saveCustom}>Save exercise</button></section>}
-    {googleHealth&&<section className="panel integration-panel"><div className="section-heading"><h2>Google Health</h2><span className={`connection-state ${googleHealth.connected?'connected':'disconnected'}`}>{googleHealth.connected?'Connected':'Disconnected'}</span></div><p>One-way connection: Movement OS only sends a session after it is saved here. It never reads Google Health data.</p>{!googleHealth.configured&&<p className="integration-setup">Setup required: add the OAuth client ID and broker URL described in <code>GOOGLE_HEALTH_SETUP.md</code>.</p>}{googleHealth.status.message&&<p className={`integration-status ${googleHealth.status.state}`} role="status">{googleHealth.status.message}</p>}<div className="button-row">{googleHealth.connected?<button className="secondary danger-text" disabled={googleHealth.status.state==='syncing'} onClick={googleHealth.onDisconnect}>Disconnect Google Health</button>:<button className="primary" disabled={!googleHealth.configured||googleHealth.status.state==='syncing'} onClick={googleHealth.onConnect}>Connect Google Health</button>}</div></section>}
-    <section className="panel"><div className="section-heading"><h2>Data</h2><span>schema v{state.schemaVersion}</span></div><p>{catalogueStats.total + state.customExercises.length} supported exercises · {state.history.length} sessions stored locally.</p><div className="button-row"><button className="secondary" onClick={() => downloadBackup(state)}>Export backup</button><button className="secondary" disabled={!state.history.length} onClick={() => downloadHistoryCsv(state)}>Export history CSV</button><button className="secondary" onClick={() => inputRef.current?.click()}>Import backup</button><input ref={inputRef} hidden type="file" accept="application/json,.json" onChange={event => importBackup(event.target.files?.[0])}/></div><div className="data-reset"><div><strong>Reset Movement OS</strong><small>Delete your profile, saved workouts, history, issues, learning data, custom exercises, and the Google Health connection from this device.</small></div><button className="secondary danger-text" onClick={onResetData}>Reset all data</button></div></section>
-  </div>
+    if (!editing?.name.trim()) return;
+    const id =
+      editing.id ||
+      `${categoryPrefix[editing.category] ?? "u"}_custom_${Date.now()}`;
+    onSaveCustom({
+      ...editing,
+      id,
+      name: editing.name.trim().slice(0, 120),
+      description:
+        editing.description.trim().slice(0, 600) || "Custom exercise.",
+      pattern:
+        editing.pattern.trim().replace(/\W+/g, "_").slice(0, 80) || "custom",
+      durationSeconds: Math.max(1, Math.min(3600, editing.durationSeconds)),
+      prescription: editing.prescription.trim().slice(0, 80) || "10 reps",
+      videoUrl: editing.videoUrl?.trim().slice(0, 1000),
+      isCustom: true,
+    });
+    setShowCustom(false);
+    setEditing(null);
+  };
+  return (
+    <div className="screen profile-screen">
+      <section className="page-intro">
+        <span className="eyebrow">PERSONALISE THE ENGINE</span>
+        <h1>Your training profile</h1>
+        <p>
+          These defaults influence every generated session and quick-start
+          recommendation.
+        </p>
+      </section>
+      <CoachPanel
+        goal={state.profile.goal}
+        equipment={
+          state.profile.equipment
+            .filter((item) => item !== "none")
+            .join(", ") || "bodyweight only"
+        }
+      />
+      <section className="panel form-panel">
+        <label>
+          Name
+          <input
+            value={state.profile.name}
+            placeholder="What should we call you?"
+            onChange={(event) =>
+              update("name", event.target.value.slice(0, 80))
+            }
+          />
+        </label>
+        <label>
+          Primary goal
+          <select
+            value={state.profile.goal}
+            onChange={(event) => update("goal", event.target.value as Goal)}
+          >
+            {["general", "strength", "muscle", "endurance", "mobility"].map(
+              (goal) => (
+                <option key={goal}>{goal}</option>
+              ),
+            )}
+          </select>
+        </label>
+        <div className="section-heading">
+          <h2>Movement levels</h2>
+          <span>Used independently by the coach</span>
+        </div>
+        <div className="level-grid">
+          {(["upper", "lower", "core", "conditioning"] as const).map((area) => (
+            <label key={area}>
+              {area}
+              <select
+                value={state.profile[area]}
+                onChange={(event) =>
+                  update(
+                    area,
+                    Number(event.target.value) as Profile[typeof area],
+                  )
+                }
+              >
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <option key={value} value={value}>
+                    Level {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+      </section>
+      <section className="panel">
+        <div className="section-heading">
+          <h2>Your equipment</h2>
+          <span>{state.profile.equipment.length} selected</span>
+        </div>
+        <div className="filter-pills">
+          {equipmentOptions.map((item) => (
+            <button
+              key={item}
+              className={
+                state.profile.equipment.includes(item) ? "selected" : ""
+              }
+              onClick={() => toggleEquipment(item)}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="panel">
+        <div className="section-heading">
+          <h2>Issues & adjustments</h2>
+          <span>
+            {state.issues.filter((issue) => issue.status === "active").length}{" "}
+            active
+          </span>
+        </div>
+        <p>
+          Active issues reduce affected prescriptions. Flare-ups exclude
+          movements that load the selected muscle, joint, hand, or foot.
+        </p>
+        <SafetyNotice compact />
+        {state.issues
+          .filter((issue) => issue.status === "active")
+          .map((issue) => (
+            <div className="issue-row" key={issue.id}>
+              <div>
+                <strong>
+                  {bodyAreaLabel(issue.area)} · {issue.side}
+                </strong>
+                <small>
+                  {issue.severity}
+                  {issue.note ? ` · ${issue.note}` : ""}
+                </small>
+              </div>
+              <div className="inline-actions">
+                <button onClick={() => onResolveIssue(issue.id)}>
+                  Resolve
+                </button>
+                <button
+                  className="danger-text"
+                  onClick={() =>
+                    confirm("Delete this issue?") && onDeleteIssue(issue.id)
+                  }
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        <div className="issue-area-editor">
+          <strong>Where is the issue?</strong>
+          <BodyAreaPicker
+            value={[issueArea]}
+            multiple={false}
+            onChange={(areas) => areas[0] && setIssueArea(areas[0])}
+          />
+        </div>
+        <div className="issue-form">
+          <select
+            aria-label="Issue severity"
+            value={severity}
+            onChange={(event) =>
+              setSeverity(event.target.value as typeof severity)
+            }
+          >
+            <option value="mild">Mild</option>
+            <option value="moderate">Moderate</option>
+            <option value="flare">Flare-up</option>
+          </select>
+          <select
+            aria-label="Issue side"
+            value={side}
+            onChange={(event) => setSide(event.target.value as typeof side)}
+          >
+            <option value="bilateral">Both / centre</option>
+            <option value="left">Left</option>
+            <option value="right">Right</option>
+          </select>
+          <input
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Optional note"
+          />
+          <button
+            className="secondary"
+            onClick={() => {
+              onAddIssue(issueArea, severity, side, note);
+              setNote("");
+            }}
+          >
+            Add {bodyAreaLabel(issueArea)} issue
+          </button>
+        </div>
+        {state.issues.some((issue) => issue.status === "resolved") && (
+          <details className="resolved-issues">
+            <summary>
+              Resolved issues (
+              {
+                state.issues.filter((issue) => issue.status === "resolved")
+                  .length
+              }
+              )
+            </summary>
+            {state.issues
+              .filter((issue) => issue.status === "resolved")
+              .map((issue) => (
+                <div className="issue-row" key={issue.id}>
+                  <div>
+                    <strong>{bodyAreaLabel(issue.area)}</strong>
+                    <small>
+                      {issue.side} · {issue.severity}
+                    </small>
+                  </div>
+                  <div className="inline-actions">
+                    <button onClick={() => onReopenIssue(issue.id)}>
+                      Reopen
+                    </button>
+                    <button
+                      className="danger-text"
+                      onClick={() => onDeleteIssue(issue.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </details>
+        )}
+      </section>
+      <section className="panel">
+        <div className="section-heading">
+          <h2>Playback</h2>
+        </div>
+        <label className="toggle-row">
+          <span>
+            <strong>Countdown sounds</strong>
+            <small>Audio cues during timed work and rest</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={state.profile.soundEnabled}
+            onChange={(event) => update("soundEnabled", event.target.checked)}
+          />
+        </label>
+        <label className="toggle-row">
+          <span>
+            <strong>Wait for me between exercises</strong>
+            <small>Log each movement before its timed rest begins</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={state.profile.waitBetweenExercises}
+            onChange={(event) =>
+              update("waitBetweenExercises", event.target.checked)
+            }
+          />
+        </label>
+        <label className="toggle-row">
+          <span>
+            <strong>Advanced bridges</strong>
+            <small>Opt into higher-risk spinal extension</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={state.profile.advancedBridges}
+            onChange={(event) =>
+              update("advancedBridges", event.target.checked)
+            }
+          />
+        </label>
+      </section>
+      <section className="panel">
+        <div className="section-heading">
+          <h2>Custom exercises</h2>
+          <button className="secondary compact" onClick={() => openCustom()}>
+            + Create
+          </button>
+        </div>
+        {state.customExercises.length === 0 ? (
+          <p>
+            Create movements with your own coaching notes, equipment, level, and
+            prescription.
+          </p>
+        ) : (
+          state.customExercises.map((exercise) => (
+            <div className="issue-row" key={exercise.id}>
+              <div>
+                <strong>{exercise.name}</strong>
+                <small>
+                  {exercise.category} · {exercise.prescription}
+                </small>
+              </div>
+              <div className="inline-actions">
+                <button onClick={() => openCustom(exercise)}>Edit</button>
+                <button
+                  className="danger-text"
+                  onClick={() =>
+                    confirm(`Delete ${exercise.name}?`) &&
+                    onDeleteCustom(exercise.id)
+                  }
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </section>
+      {showCustom && editing && (
+        <section className="panel form-panel custom-editor">
+          <div className="section-heading">
+            <h2>{editing.id ? "Edit" : "Create"} exercise</h2>
+            <button
+              className="text-button"
+              onClick={() => setShowCustom(false)}
+            >
+              Cancel
+            </button>
+          </div>
+          <label>
+            Name
+            <input
+              value={editing.name}
+              onChange={(event) =>
+                setEditing({ ...editing, name: event.target.value })
+              }
+              placeholder="My movement"
+            />
+          </label>
+          <label>
+            Category
+            <select
+              value={editing.category}
+              onChange={(event) =>
+                setEditing({
+                  ...editing,
+                  category: event.target.value as Category,
+                })
+              }
+            >
+              {customCategories.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Primary area
+            <select
+              value={editing.primaryMuscles[0]}
+              onChange={(event) =>
+                setEditing({
+                  ...editing,
+                  primaryMuscles: [event.target.value as MuscleArea],
+                })
+              }
+            >
+              {customExerciseAreas.map((item) => (
+                <option key={item} value={item}>
+                  {bodyAreaLabel(item)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Pattern
+            <input
+              value={editing.pattern}
+              onChange={(event) =>
+                setEditing({ ...editing, pattern: event.target.value })
+              }
+              placeholder="push, hinge, carry…"
+            />
+          </label>
+          <label>
+            Level
+            <select
+              value={editing.level}
+              onChange={(event) =>
+                setEditing({
+                  ...editing,
+                  level: Number(event.target.value) as Exercise["level"],
+                })
+              }
+            >
+              {[1, 2, 3, 4, 5].map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Equipment
+            <select
+              value={editing.equipment[0]}
+              onChange={(event) =>
+                setEditing({
+                  ...editing,
+                  equipment: [event.target.value as Equipment],
+                })
+              }
+            >
+              {equipmentOptions.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Prescription
+            <input
+              value={editing.prescription}
+              onChange={(event) =>
+                setEditing({ ...editing, prescription: event.target.value })
+              }
+              placeholder="10 reps or 30 sec"
+            />
+          </label>
+          <label>
+            Estimated duration (seconds)
+            <input
+              type="number"
+              min="1"
+              max="3600"
+              value={editing.durationSeconds}
+              onChange={(event) =>
+                setEditing({
+                  ...editing,
+                  durationSeconds: Number(event.target.value),
+                })
+              }
+            />
+          </label>
+          <label>
+            Video link (optional)
+            <input
+              type="url"
+              value={editing.videoUrl ?? ""}
+              onChange={(event) =>
+                setEditing({ ...editing, videoUrl: event.target.value })
+              }
+              placeholder="https://…"
+            />
+          </label>
+          <label>
+            Coaching notes
+            <textarea
+              value={editing.description}
+              onChange={(event) =>
+                setEditing({ ...editing, description: event.target.value })
+              }
+              placeholder="Technique and setup cues"
+            />
+          </label>
+          <button className="primary" onClick={saveCustom}>
+            Save exercise
+          </button>
+        </section>
+      )}
+      {googleHealth && (
+        <section className="panel integration-panel">
+          <div className="section-heading">
+            <h2>Google Health</h2>
+            <span
+              className={`connection-state ${googleHealth.connected ? "connected" : "disconnected"}`}
+            >
+              {googleHealth.connected ? "Connected" : "Disconnected"}
+            </span>
+          </div>
+          <p>
+            One-way connection: Movement OS only sends a session after it is
+            saved here. It never reads Google Health data.
+          </p>
+          {!googleHealth.configured && (
+            <p className="integration-setup">
+              Setup required: add the OAuth client ID and broker URL described
+              in <code>GOOGLE_HEALTH_SETUP.md</code>.
+            </p>
+          )}
+          {googleHealth.status.message && (
+            <p
+              className={`integration-status ${googleHealth.status.state}`}
+              role="status"
+            >
+              {googleHealth.status.message}
+            </p>
+          )}
+          <div className="button-row">
+            {googleHealth.connected ? (
+              <button
+                className="secondary danger-text"
+                disabled={googleHealth.status.state === "syncing"}
+                onClick={googleHealth.onDisconnect}
+              >
+                Disconnect Google Health
+              </button>
+            ) : (
+              <button
+                className="primary"
+                disabled={
+                  !googleHealth.configured ||
+                  googleHealth.status.state === "syncing"
+                }
+                onClick={googleHealth.onConnect}
+              >
+                Connect Google Health
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+      <section className="panel">
+        <div className="section-heading">
+          <h2>Data</h2>
+          <span>schema v{state.schemaVersion}</span>
+        </div>
+        <p>
+          {catalogueStats.total + state.customExercises.length} supported
+          exercises · {state.history.length} sessions stored locally.
+        </p>
+        <div className="button-row">
+          <button className="secondary" onClick={() => downloadBackup(state)}>
+            Export backup
+          </button>
+          <button
+            className="secondary"
+            disabled={!state.history.length}
+            onClick={() => downloadHistoryCsv(state)}
+          >
+            Export history CSV
+          </button>
+          <button
+            className="secondary"
+            onClick={() => inputRef.current?.click()}
+          >
+            Import backup
+          </button>
+          <input
+            ref={inputRef}
+            hidden
+            type="file"
+            accept="application/json,.json"
+            onChange={(event) => importBackup(event.target.files?.[0])}
+          />
+        </div>
+        <div className="data-reset">
+          <div>
+            <strong>Reset Movement OS</strong>
+            <small>
+              Delete your profile, saved workouts, history, issues, learning
+              data, custom exercises, and the Google Health connection from this
+              device.
+            </small>
+          </div>
+          <button className="secondary danger-text" onClick={onResetData}>
+            Reset all data
+          </button>
+        </div>
+      </section>
+    </div>
+  );
 }
